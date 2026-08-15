@@ -522,13 +522,19 @@ def update_source_mode(
 @app.post("/sources/modes")
 def update_source_modes(
     request: Request,
+    background_tasks: BackgroundTasks,
     csrf_token: Annotated[str, Form()],
     source_id: Annotated[list[int], Form()],
     mode: Annotated[list[str], Form()],
+    response_word_limit: Annotated[list[str], Form()],
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
-    if len(source_id) != len(mode) or len(source_id) != len(set(source_id)):
+    if (
+        len(source_id) != len(mode)
+        or len(source_id) != len(response_word_limit)
+        or len(source_id) != len(set(source_id))
+    ):
         raise HTTPException(status_code=400, detail="invalid source mode selection")
     allowed = set(SOURCE_MODE_LABELS)
     if any(item not in allowed for item in mode):
@@ -537,20 +543,31 @@ def update_source_modes(
     if len(sources) != len(source_id):
         raise HTTPException(status_code=404, detail="source not found")
     selected = dict(zip(source_id, mode, strict=True))
+    limits: dict[int, int | None] = {}
+    for item_id, raw_limit in zip(source_id, response_word_limit, strict=True):
+        try:
+            limit = int(raw_limit) if raw_limit.strip() else None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="invalid response word limit") from exc
+        if limit is not None and not 60 <= limit <= 1000:
+            raise HTTPException(status_code=422, detail="response word limit must be 60-1000")
+        limits[item_id] = limit
     changes = 0
     for source in sources:
         new_mode = selected[source.id]
-        if source.mode == new_mode:
-            continue
-        source.mode = new_mode
-        changes += 1
+        new_limit = limits[source.id]
+        if source.mode != new_mode or source.response_word_limit != new_limit:
+            source.mode = new_mode
+            source.response_word_limit = new_limit
+            changes += 1
     add_audit(
         db,
         "SOURCE_MODES_UPDATED",
-        f"Bronmodi in één keer opgeslagen: {changes} wijziging(en)",
+        f"Broninstellingen in één keer opgeslagen: {changes} wijziging(en)",
         data={"changes": changes},
     )
     db.commit()
+    background_tasks.add_task(pipeline.run_all)
     return RedirectResponse("/settings#bronbeheer", status_code=303)
 
 

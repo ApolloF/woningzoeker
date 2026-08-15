@@ -96,3 +96,11 @@ def test_old_source_timestamp_is_ignored_but_unknown_timestamp_is_allowed() -> N
     assert result.decision is Decision.IGNORE
     assert result.rules[0].rule == "listing_age"
     assert RuleEngine().evaluate(listing(published_at=None), criteria).decision is Decision.AUTO_REACT
+
+
+def test_auto_react_age_is_separate_from_listing_visibility() -> None:
+    published = datetime.now(UTC) - timedelta(minutes=31)
+    criteria = Criteria(max_listing_age_minutes=180, max_auto_react_age_minutes=30)
+    result = RuleEngine().evaluate(listing(published_at=published), criteria)
+    assert result.decision is Decision.REVIEW
+    assert any(rule.rule == "auto_react_age" for rule in result.rules)

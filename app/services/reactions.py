@@ -16,12 +16,13 @@ from app.models import (
     Decision,
     Listing,
     PrivateContact,
+    SearchConfig,
     SourceConfig,
     SourceMode,
     Submission,
     SubmissionState,
 )
-from app.schemas import PrivateContactData, SourceCredentialData
+from app.schemas import Criteria, PrivateContactData, SourceCredentialData
 from app.services.audit import add_audit
 from app.services.crypto import CredentialCipher
 from app.services.reaction_browser import BrowserReactionResult, LoginCheckResult, ReactionBrowser
@@ -271,6 +272,8 @@ class ReactionService:
                 return DispatchResult("skipped", "LISTING_NOT_AUTO_REACT")
             if not listing.response_draft:
                 return DispatchResult("skipped", "MESSAGE_MISSING")
+            search_config = db.get(SearchConfig, 1)
+            criteria = Criteria.model_validate(search_config.config) if search_config else Criteria()
 
             existing = db.scalar(
                 select(Submission).where(
@@ -330,6 +333,7 @@ class ReactionService:
             message = listing.response_draft
             source_name = source.name
             source_id = source.id
+            accept_legal_confirmations = criteria.auto_accept_legal_confirmations
 
         try:
             contact = self._load_contact()
@@ -354,6 +358,7 @@ class ReactionService:
                 credential=credential,
                 submission_id=submission_id,
                 allow_submit=allow_submit,
+                accept_legal_confirmations=accept_legal_confirmations,
             )
         except Exception as exc:
             logger.exception(

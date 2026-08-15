@@ -63,8 +63,10 @@ class Criteria(BaseModel):
     review_hard_income_requirements: bool = True
     max_required_monthly_income: Decimal | None = Field(default=None, ge=0)
     max_listing_age_minutes: int | None = Field(default=180, ge=5, le=10080)
+    max_auto_react_age_minutes: int | None = Field(default=180, ge=1, le=10080)
     auto_react_aggressiveness: Literal["careful", "balanced", "fast"] = "balanced"
     auto_react_min_score: int = Field(default=75, ge=40, le=100)
+    auto_accept_legal_confirmations: bool = False
     telegram_listing_filter: Literal["all", "auto_react", "score", "auto_react_or_score", "off"] = (
         "auto_react_or_score"
     )

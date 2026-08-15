@@ -266,8 +266,10 @@ def update_criteria(
     review_hard_income_requirements: Annotated[bool, Form()] = False,
     max_required_monthly_income: Annotated[str, Form()] = "",
     max_listing_age_minutes: Annotated[str, Form()] = "180",
+    max_auto_react_age_minutes: Annotated[str, Form()] = "180",
     auto_react_aggressiveness: Annotated[str, Form()] = "balanced",
     auto_react_min_score: Annotated[int, Form()] = 75,
+    auto_accept_legal_confirmations: Annotated[bool, Form()] = False,
     telegram_listing_filter: Annotated[str, Form()] = "auto_react_or_score",
     telegram_min_score: Annotated[int, Form()] = 75,
     telegram_notify_assistance: Annotated[bool, Form()] = False,
@@ -299,8 +301,14 @@ def update_criteria(
             "max_listing_age_minutes": (
                 int(max_listing_age_minutes) if max_listing_age_minutes.strip() else None
             ),
+            "max_auto_react_age_minutes": (
+                int(max_auto_react_age_minutes)
+                if max_auto_react_age_minutes.strip()
+                else None
+            ),
             "auto_react_aggressiveness": auto_react_aggressiveness,
             "auto_react_min_score": auto_react_min_score,
+            "auto_accept_legal_confirmations": auto_accept_legal_confirmations,
             "telegram_listing_filter": telegram_listing_filter,
             "telegram_min_score": telegram_min_score,
             "telegram_notify_assistance": telegram_notify_assistance,

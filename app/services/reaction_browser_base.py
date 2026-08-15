@@ -95,7 +95,15 @@ class LoginCheckResult:
 class ReactionBrowser:
     """Conservative browser automation: fill known fields and stop on ambiguity."""
 
-    _legal_checkbox = re.compile(r"agree|terms|condition|privacy|accept|toestemming", re.I)
+    _legal_checkbox = re.compile(
+        r"agree|agreement|terms|condition|privacy|accept|toestemming|akkoord|voorwaarden",
+        re.I,
+    )
+    _sensitive_checkbox = re.compile(
+        r"marketing|nieuwsbrief|newsletter|commercial|reclame|betaling|payment|kosten|cost|"
+        r"identiteit|identity|leeftijd|age|waarheid|truth|correct ingevuld|data.?sharing",
+        re.I,
+    )
     _sensitive_field = re.compile(
         r"income|salary|employer|birth|geboorte|bsn|passport|identity|document|bank|iban|id[_-]",
         re.I,
@@ -173,6 +181,7 @@ class ReactionBrowser:
         credential: SourceCredentialData | None,
         submission_id: int,
         allow_submit: bool,
+        accept_legal_confirmations: bool = False,
     ) -> BrowserReactionResult:
         spec = REACTION_SPECS.get(source_name)
         if spec is None:
@@ -230,7 +239,7 @@ class ReactionBrowser:
                         context,
                         self._review("FORM_NOT_FOUND", "Geen veilig herkenbaar reactieformulier gevonden."),
                     )
-                blocker = self._form_blocker(form)
+                blocker = self._form_blocker(form, accept_legal_confirmations)
                 if blocker:
                     return self._with_storage(context, self._review(*blocker))
 
@@ -418,7 +427,19 @@ class ReactionBrowser:
                 return form
         return None
 
-    def _form_blocker(self, form: Locator) -> tuple[str, str] | None:
+    @classmethod
+    def _legal_checkbox_action(cls, descriptor: str, allow_accept: bool) -> str | None:
+        if cls._sensitive_checkbox.search(descriptor):
+            return "review"
+        if not cls._legal_checkbox.search(descriptor):
+            return None
+        if not allow_accept:
+            return "review"
+        return "accept"
+
+    def _form_blocker(
+        self, form: Locator, accept_legal_confirmations: bool = False
+    ) -> tuple[str, str] | None:
         action = form.get_attribute("action") or ""
         if "/shop/add" in action:
             return "REGISTRATION_OR_PURCHASE_FLOW", "Dit formulier start registratie of aankoop."
@@ -437,10 +458,22 @@ class ReactionBrowser:
                     ),
                 )
             )
-            if self._legal_checkbox.search(descriptor):
+            with contextlib.suppress(Exception):
+                label_text = checkbox.evaluate(
+                    "el => el.closest('label')?.innerText || "
+                    "(el.id ? document.querySelector(`label[for=\"${el.id}\"]`)?.innerText : '') || ''"
+                )
+                if isinstance(label_text, str):
+                    descriptor = f"{descriptor} {label_text}"
+            checkbox_action = self._legal_checkbox_action(descriptor, accept_legal_confirmations)
+            if checkbox_action == "accept":
+                if checkbox.is_visible() and not checkbox.is_disabled() and not checkbox.is_checked():
+                    checkbox.check()
+                continue
+            if checkbox_action == "review":
                 return (
                     "LEGAL_CONFIRMATION_REQUIRED",
-                    "Het formulier vraagt om een persoonlijke voorwaarden- of privacyverklaring.",
+                    "Het formulier vraagt om een voorwaarden-, privacy- of andere persoonlijke verklaring.",
                 )
         return None
 

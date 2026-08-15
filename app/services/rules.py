@@ -35,15 +35,19 @@ class RuleEngine:
         score = 50
         rules: list[RuleResult] = []
         description = listing.description or ""
+        age_minutes: int | None = None
 
         if not listing.is_available:
             return self._ignored("availability", "Listing is niet meer beschikbaar.")
-        if criteria.max_listing_age_minutes is not None and listing.published_at is not None:
+        if listing.published_at is not None:
             published_at = listing.published_at
             if published_at.tzinfo is None:
                 published_at = published_at.replace(tzinfo=UTC)
             age_minutes = max(0, int((datetime.now(UTC) - published_at).total_seconds() // 60))
-            if age_minutes > criteria.max_listing_age_minutes:
+            if (
+                criteria.max_listing_age_minutes is not None
+                and age_minutes > criteria.max_listing_age_minutes
+            ):
                 return self._ignored(
                     "listing_age",
                     f"Advertentie is {age_minutes} minuten oud; grens is {criteria.max_listing_age_minutes}.",
@@ -190,6 +194,23 @@ class RuleEngine:
                 and not hard_income_requirement
             )
         decision = Decision.AUTO_REACT if auto_safe else Decision.REVIEW
+        if (
+            decision is Decision.AUTO_REACT
+            and age_minutes is not None
+            and criteria.max_auto_react_age_minutes is not None
+            and age_minutes > criteria.max_auto_react_age_minutes
+        ):
+            decision = Decision.REVIEW
+            rules.append(
+                RuleResult(
+                    rule="auto_react_age",
+                    outcome="review",
+                    detail=(
+                        f"Advertentie is {age_minutes} minuten oud; automatisch reageren stopt "
+                        f"na {criteria.max_auto_react_age_minutes} minuten."
+                    ),
+                )
+            )
         summary = (
             "Voldoet aan de harde, deterministische criteria."
             if decision is Decision.AUTO_REACT

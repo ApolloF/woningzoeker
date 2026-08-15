@@ -72,7 +72,7 @@
 
 .source-control-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.45fr) minmax(130px, .85fr) minmax(150px, 1fr) minmax(165px, .9fr);
+  grid-template-columns: minmax(180px, 1.45fr) minmax(130px, .85fr) minmax(150px, 1fr) minmax(165px, .9fr) minmax(110px, .55fr);
   gap: 18px;
   align-items: center;
   padding: 15px 16px;
@@ -110,7 +110,8 @@
   font-weight: 700;
 }
 
-.mode-field select {
+.mode-field select,
+.mode-field input {
   color: var(--ink);
   font-size: 14px;
 }
@@ -222,10 +223,6 @@
   .source-identity,
   .mode-field {
     grid-column: 1 / -1;
-  }
-
-  .mode-field {
-    grid-row: 2;
   }
 
   #source-mode-dirty {

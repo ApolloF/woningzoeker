@@ -95,8 +95,8 @@ class Pipeline(BasePipeline):
                 .order_by(func.coalesce(Listing.published_at, Listing.first_seen_at).desc())
                 .limit(10)
             )
-            if criteria.max_listing_age_minutes is not None:
-                cutoff = datetime.now(UTC) - timedelta(minutes=criteria.max_listing_age_minutes)
+            if criteria.max_auto_react_age_minutes is not None:
+                cutoff = datetime.now(UTC) - timedelta(minutes=criteria.max_auto_react_age_minutes)
                 query = query.where(func.coalesce(Listing.published_at, Listing.first_seen_at) >= cutoff)
             listing_ids = list(db.scalars(query).all())
 

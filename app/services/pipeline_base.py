@@ -136,7 +136,7 @@ class Pipeline:
             summary = evaluation.summary
             draft: str | None = None
             llm_run: LLMRun | None = None
-            content_hash = self._content_hash(normalized, profile)
+            content_hash = self._content_hash(normalized, profile, source.response_word_limit)
 
             if decision is not Decision.IGNORE:
                 deterministic_draft = self.response_provider.generate(normalized, profile)
@@ -164,6 +164,9 @@ class Pipeline:
                         decision, rule_results, summary = self._apply_llm_safety(
                             decision, rule_results, summary, llm_run, criteria
                         )
+                draft = self.response_provider.apply_word_limit(
+                    draft, source.response_word_limit, profile
+                )
 
             listing = existing or Listing(
                 source_id=source.id,
@@ -375,13 +378,17 @@ class Pipeline:
         return decision, rules, f"{summary} LLM: {result.explanation} {suffix}"
 
     @staticmethod
-    def _content_hash(listing: NormalizedListing, profile: ApplicantProfileData) -> str:
+    def _content_hash(
+        listing: NormalizedListing,
+        profile: ApplicantProfileData,
+        response_word_limit: int | None = None,
+    ) -> str:
         profile_payload = profile.model_dump(mode="json")
         profile_fingerprint = hashlib.sha256(
             json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode()
         ).hexdigest()
         relevant = {
-            "draft_version": 2,
+            "draft_version": 3,
             "title": listing.title,
             "rent_total": str(listing.rent_total),
             "area_m2": str(listing.area_m2),
@@ -392,6 +399,7 @@ class Pipeline:
             "published_at": listing.published_at.isoformat() if listing.published_at else None,
             "is_available": listing.is_available,
             "profile_fingerprint": profile_fingerprint,
+            "response_word_limit": response_word_limit,
         }
         payload = json.dumps(relevant, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()

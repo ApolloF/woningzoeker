@@ -61,6 +61,7 @@ class SourceConfig(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     poll_interval_seconds: Mapped[int] = mapped_column(Integer, default=300)
     mode: Mapped[str] = mapped_column(String(30), default=SourceMode.DRAFT_ONLY.value)
+    response_word_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

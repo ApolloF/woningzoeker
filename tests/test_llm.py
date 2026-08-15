@@ -149,9 +149,11 @@ def test_missing_cached_llm_result_fails_closed() -> None:
 
 
 def test_exact_mode_keeps_own_draft_and_light_mode_enforces_guarantor() -> None:
-    own = "Mijn eigen bericht.\n\nEen garantsteller is altijd beschikbaar."
+    own = "Sara en ik samen woon hier.\n\nEen garantsteller is altijd beschikbaar."
     exact = profile().model_copy(update={"message_rewrite_mode": "exact"})
-    assert ListingLLMService._controlled_draft("Volledig herschreven.", own, exact) == own
+    controlled_exact = ListingLLMService._controlled_draft("Volledig herschreven.", own, exact)
+    assert controlled_exact.startswith("Sara en ik samen wonen")
+    assert "Volledig herschreven" not in controlled_exact
 
     light = profile().model_copy(update={"message_rewrite_mode": "light"})
     controlled = ListingLLMService._controlled_draft("Licht aangepast.", own, light)

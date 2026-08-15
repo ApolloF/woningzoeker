@@ -16,12 +16,13 @@ from app.models import (
     Decision,
     Listing,
     PrivateContact,
+    SearchConfig,
     SourceConfig,
     SourceMode,
     Submission,
     SubmissionState,
 )
-from app.schemas import PrivateContactData
+from app.schemas import Criteria, PrivateContactData
 from app.services.crypto import CredentialCipher
 from app.services.reaction_browser import (
     REACTION_SPECS,
@@ -76,6 +77,13 @@ def test_field_mapping_is_allowlisted() -> None:
     assert ReactionBrowser._field_key("c_lastname", "text", "INPUT") == "last"
     assert ReactionBrowser._field_key("remark", "text", "TEXTAREA") == "message"
     assert ReactionBrowser._field_key("annual_income", "text", "INPUT") is None
+
+
+def test_only_ordinary_legal_confirmations_can_be_auto_accepted() -> None:
+    assert ReactionBrowser._legal_checkbox_action("Akkoord met privacy en voorwaarden", True) == "accept"
+    assert ReactionBrowser._legal_checkbox_action("Akkoord met privacy en voorwaarden", False) == "review"
+    assert ReactionBrowser._legal_checkbox_action("Marketing nieuwsbrief toestemming", True) == "review"
+    assert ReactionBrowser._legal_checkbox_action("Ik verklaar mijn identiteit correct", True) == "review"
 
 
 def test_sent_submission_blocks_duplicate_canonical_reaction(monkeypatch: Any) -> None:
@@ -144,7 +152,17 @@ def test_sent_submission_blocks_duplicate_canonical_reaction(monkeypatch: Any) -
             raw_data={"_llm": {"needs_review": False, "error": None}},
         )
         encrypted = CredentialCipher(key).encrypt(contact.model_dump(mode="json"))
-        db.add_all([listing, duplicate, PrivateContact(id=1, encrypted_payload=encrypted)])
+        db.add_all(
+            [
+                listing,
+                duplicate,
+                PrivateContact(id=1, encrypted_payload=encrypted),
+                SearchConfig(
+                    id=1,
+                    config=Criteria(auto_accept_legal_confirmations=True).model_dump(mode="json"),
+                ),
+            ]
+        )
         db.commit()
         listing_id = listing.id
         duplicate_id = duplicate.id
@@ -157,6 +175,7 @@ def test_sent_submission_blocks_duplicate_canonical_reaction(monkeypatch: Any) -
     assert first.status == "sent"
     assert second.code == "ALREADY_SENT"
     assert len(fake.calls) == 1
+    assert fake.calls[0]["accept_legal_confirmations"] is True
     with testing_session() as db:
         submissions = db.scalars(select(Submission)).all()
         assert len(submissions) == 1

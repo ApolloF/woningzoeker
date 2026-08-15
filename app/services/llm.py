@@ -11,6 +11,7 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 from app.config import Settings
 from app.schemas import ApplicantProfileData, NormalizedListing
+from app.services.response import DeterministicDutchResponseProvider
 
 
 class LLMUnavailable(RuntimeError):
@@ -128,8 +129,11 @@ class BaseHTTPProvider:
             "Analyseer uitsluitend de meegegeven openbare woningadvertentie. Bepaal of de woning "
             "volgens de tekst voor twee personen geschikt lijkt en markeer elke ongewone, "
             "juridische, financiële, betaalde of ontbrekende vereiste voor handmatige controle. "
-            "Schrijf een korte natuurlijke Nederlandse interesse-reactie die het adres en één of "
-            "twee werkelijk genoemde woningkenmerken gebruikt. Verzin of wijzig nooit inkomen, "
+            "Schrijf een korte natuurlijke Nederlandse interesse-reactie en noem het adres op een "
+            "normale manier. Som geen vierkante meters, kamer- of slaapkameraantallen op en gebruik "
+            "zulke cijfers niet als reden voor enthousiasme; dat klinkt onnatuurlijk. Controleer "
+            "Nederlandse grammatica zorgvuldig, waaronder meervoud bij 'Sara en ik ... wonen'. "
+            "Verzin of wijzig nooit inkomen, "
             "contracten, werkgevers, garanties, documenten of toestemming. Gebruik de expliciet "
             "meegegeven financial_wording en guarantor_wording exact wanneer hun always_include-vlag "
             "waar is. Neem required_message_points altijd letterlijk op. Houd sender_name en het "
@@ -295,7 +299,7 @@ class ListingLLMService:
     @staticmethod
     def _controlled_draft(llm_draft: str, deterministic_draft: str, profile: ApplicantProfileData) -> str:
         if profile.message_rewrite_mode == "exact":
-            return deterministic_draft
+            return DeterministicDutchResponseProvider.polish_dutch(deterministic_draft)
         draft = llm_draft.strip()
         required = list(profile.required_message_points)
         if profile.always_include_financial:
@@ -309,7 +313,7 @@ class ListingLLMService:
             if item and normalized_item not in normalized_draft:
                 draft = f"{draft}\n\n{item}"
                 normalized_draft = f"{normalized_draft} {normalized_item}"
-        return draft
+        return DeterministicDutchResponseProvider.polish_dutch(draft)
 
     def _route_model(self, listing: NormalizedListing) -> str:
         cheap, standard, escalation = self.settings.llm_models()

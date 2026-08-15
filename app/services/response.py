@@ -9,19 +9,13 @@ from app.schemas import ApplicantProfileData, NormalizedListing
 class ResponseProvider(Protocol):
     def generate(self, listing: NormalizedListing, profile: ApplicantProfileData) -> str: ...
 
+    def apply_word_limit(
+        self, draft: str, max_words: int | None, profile: ApplicantProfileData
+    ) -> str: ...
+
 
 class DeterministicDutchResponseProvider:
     def generate(self, listing: NormalizedListing, profile: ApplicantProfileData) -> str:
-        characteristics: list[str] = []
-        if listing.area_m2:
-            characteristics.append(f"de woonoppervlakte van {listing.area_m2:g} m²")
-        if listing.bedrooms:
-            label = "slaapkamer" if listing.bedrooms == 1 else "slaapkamers"
-            characteristics.append(f"de {listing.bedrooms} {label}")
-        if len(characteristics) < 2:
-            characteristics.append(f"de ligging in {listing.city}")
-        specific = " en ".join(characteristics[:2])
-
         applicants = " en ".join(profile.applicants)
         sender = profile.sender_name.strip()
         joint = profile.message_perspective == "joint"
@@ -44,7 +38,8 @@ class DeterministicDutchResponseProvider:
                 parts.append(text)
 
         if profile.standard_message.strip():
-            return self._complete_letter(profile.standard_message.strip(), mandatory)
+            letter = self._complete_letter(profile.standard_message.strip(), mandatory)
+            return self.polish_dutch(letter)
         details = " ".join(profile.applicant_details)
         lifestyle = ", ".join(profile.lifestyle)
         other_applicants = ", ".join(name for name in profile.applicants if name != sender)
@@ -61,7 +56,7 @@ class DeterministicDutchResponseProvider:
         )
         parts = [
             "Beste verhuurder,",
-            f"{opening} Vooral {specific} spreken ons aan.",
+            f"{opening} De woning spreekt ons erg aan.",
             situation,
         ]
         for text in mandatory:
@@ -75,7 +70,88 @@ class DeterministicDutchResponseProvider:
                 closing,
             ]
         )
-        return "\n\n".join(parts)
+        return self.polish_dutch("\n\n".join(parts))
+
+    @staticmethod
+    def polish_dutch(letter: str) -> str:
+        """Apply narrow, deterministic fixes without rewriting the applicant's voice."""
+        polished = re.sub(
+            r"\b([A-ZÀ-ÖØ-Ý][\wÀ-ÿ'-]+\s+en\s+ik(?:\s+samen)?)\s+woon\b",
+            r"\1 wonen",
+            letter,
+            flags=re.I,
+        )
+        polished = re.sub(
+            r",\s*met\s+\d+(?:[.,]\d+)?\s*m[²2]\s+en\s+\d+\s+kamers?\s*,",
+            ",",
+            polished,
+            flags=re.I,
+        )
+        polished = re.sub(
+            r"(?im)^\s*Vooral\s+de\s+woonoppervlakte\s+van\s+[^.\n]+"
+            r"(?:kamer|kamers)[^.\n]*spre(?:ekt|ken)\s+ons\s+aan\.\s*",
+            "",
+            polished,
+        )
+        polished = re.sub(r"[ \t]+([,.!?])", r"\1", polished)
+        return re.sub(r"\n{3,}", "\n\n", polished).strip()
+
+    @classmethod
+    def apply_word_limit(
+        cls,
+        draft: str,
+        max_words: int | None,
+        profile: ApplicantProfileData,
+    ) -> str:
+        if max_words is None or len(draft.split()) <= max_words:
+            return draft
+        paragraphs = [part.strip() for part in re.split(r"\n\s*\n", draft) if part.strip()]
+        required = [item.strip() for item in profile.required_message_points if item.strip()]
+        if profile.always_include_financial and profile.financial_wording.strip():
+            required.append(profile.financial_wording.strip())
+        if profile.always_include_guarantor and profile.guarantor_wording.strip():
+            required.append(profile.guarantor_wording.strip())
+        required_normalized = [cls._normalized_text(item) for item in required]
+        protected: set[int] = set()
+        closing_seen = False
+        for index, paragraph in enumerate(paragraphs):
+            normalized = cls._normalized_text(paragraph)
+            if index == 0 and re.search(r"\bbeste\b", normalized):
+                protected.add(index)
+            if any(item in normalized for item in required_normalized):
+                protected.add(index)
+            if re.search(r"\bmet vriendelijke groet\b", normalized):
+                closing_seen = True
+            if closing_seen:
+                protected.add(index)
+
+        selected = set(protected)
+        used = sum(len(paragraphs[index].split()) for index in protected)
+        for index, paragraph in enumerate(paragraphs):
+            if index in selected:
+                continue
+            words = len(paragraph.split())
+            if used + words <= max_words:
+                selected.add(index)
+                used += words
+                continue
+            remaining = max_words - used
+            if remaining < 5:
+                continue
+            sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+            kept: list[str] = []
+            for sentence in sentences:
+                sentence_words = len(sentence.split())
+                if sentence_words <= remaining:
+                    kept.append(sentence)
+                    remaining -= sentence_words
+            if kept:
+                paragraphs[index] = " ".join(kept)
+                selected.add(index)
+                used = max_words - remaining
+        return "\n\n".join(
+            paragraph for index, paragraph in enumerate(paragraphs) if index in selected
+        )
 
     @staticmethod
     def _complete_letter(letter: str, mandatory: list[str]) -> str:
