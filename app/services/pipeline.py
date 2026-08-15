@@ -62,12 +62,7 @@ class Pipeline(BasePipeline):
             )
         if listing is None:
             return outcome
-        llm_meta = listing.raw_data.get("_llm", {}) if isinstance(listing.raw_data, dict) else {}
-        if (
-            not isinstance(llm_meta, dict)
-            or llm_meta.get("error")
-            or llm_meta.get("needs_review") is not False
-        ):
+        if listing.decision != Decision.AUTO_REACT.value:
             return outcome
         dispatch = self.reaction_service.dispatch(listing.id)
         outcome["reacted"] = dispatch.status == "sent"

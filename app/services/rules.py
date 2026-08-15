@@ -91,11 +91,13 @@ class RuleEngine:
             )
 
         price_ok = False
+        price_within_margin = False
         if listing.rent_total is None:
             rules.append(RuleResult(rule="price", outcome="unknown", detail="Totale huur ontbreekt"))
         elif listing.rent_total <= criteria.target_total_monthly:
             score += 20
             price_ok = True
+            price_within_margin = True
             rules.append(
                 RuleResult(
                     rule="price",
@@ -106,6 +108,7 @@ class RuleEngine:
             )
         elif listing.rent_total <= criteria.target_total_monthly + criteria.soft_price_margin:
             score += 5
+            price_within_margin = True
             rules.append(
                 RuleResult(
                     rule="price",
@@ -145,30 +148,47 @@ class RuleEngine:
                 )
             )
 
+        income_amount: Decimal | None = None
         hard_income_requirement = criteria.review_hard_income_requirements and bool(
             self.HARD_INCOME_PATTERN.search(description)
         )
         if hard_income_requirement:
-            amount = self._income_amount(description)
+            income_amount = self._income_amount(description)
             detail = "Advertentie bevat een harde inkomenseis."
-            if amount is not None:
-                detail = f"Advertentie noemt een inkomenseis van circa € {amount:g}."
+            if income_amount is not None:
+                detail = f"Advertentie noemt een inkomenseis van circa € {income_amount:g}."
                 if (
                     criteria.max_required_monthly_income is not None
-                    and amount > criteria.max_required_monthly_income
+                    and income_amount > criteria.max_required_monthly_income
                 ):
                     detail += " Dit ligt boven jouw ingestelde grens."
             rules.append(RuleResult(rule="hard_income_requirement", outcome="review", detail=detail))
 
         score = max(0, min(100, score))
-        auto_safe = (
-            price_ok
-            and area_ok
-            and accepted_type
-            and score >= 75
-            and not ambiguous
-            and not hard_income_requirement
+        income_above_limit = bool(
+            hard_income_requirement
+            and income_amount is not None
+            and criteria.max_required_monthly_income is not None
+            and income_amount > criteria.max_required_monthly_income
         )
+        if criteria.auto_react_aggressiveness == "fast":
+            auto_safe = (
+                price_within_margin
+                and score >= criteria.auto_react_min_score
+                and not income_above_limit
+            )
+        else:
+            required_score = criteria.auto_react_min_score
+            if criteria.auto_react_aggressiveness == "careful":
+                required_score = max(85, required_score)
+            auto_safe = (
+                price_ok
+                and area_ok
+                and accepted_type
+                and score >= required_score
+                and not ambiguous
+                and not hard_income_requirement
+            )
         decision = Decision.AUTO_REACT if auto_safe else Decision.REVIEW
         summary = (
             "Voldoet aan de harde, deterministische criteria."

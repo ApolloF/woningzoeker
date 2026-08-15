@@ -366,6 +366,7 @@ def automation_readiness(request: Request) -> dict[str, object]:
 @app.post("/settings/profile")
 def update_applicant_profile(
     request: Request,
+    background_tasks: BackgroundTasks,
     csrf_token: Annotated[str, Form()],
     applicants: Annotated[str, Form()],
     current_city: Annotated[str, Form()],
@@ -410,6 +411,7 @@ def update_applicant_profile(
     record.profile = profile.model_dump(mode="json")
     add_audit(db, "APPLICANT_PROFILE_UPDATED", "Aanvragersprofiel bijgewerkt")
     db.commit()
+    background_tasks.add_task(pipeline.run_all)
     return RedirectResponse("/settings", status_code=303)
 
 

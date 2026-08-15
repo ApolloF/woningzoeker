@@ -302,10 +302,13 @@ class ListingLLMService:
             required.append(profile.financial_wording)
         if profile.always_include_guarantor:
             required.append(profile.guarantor_wording)
+        normalized_draft = " ".join(draft.casefold().split())
         for item in required:
             item = item.strip()
-            if item and item.casefold() not in draft.casefold():
+            normalized_item = " ".join(item.casefold().split())
+            if item and normalized_item not in normalized_draft:
                 draft = f"{draft}\n\n{item}"
+                normalized_draft = f"{normalized_draft} {normalized_item}"
         return draft
 
     def _route_model(self, listing: NormalizedListing) -> str:

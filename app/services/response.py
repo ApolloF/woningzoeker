@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Protocol
 
 from app.schemas import ApplicantProfileData, NormalizedListing
@@ -38,19 +39,12 @@ class DeterministicDutchResponseProvider:
         mandatory.extend(item.strip() for item in profile.required_message_points if item.strip())
 
         def append_once(parts: list[str], text: str) -> None:
-            if text and not any(text.casefold() in part.casefold() for part in parts):
+            normalized = self._normalized_text(text)
+            if text and not any(normalized in self._normalized_text(part) for part in parts):
                 parts.append(text)
 
         if profile.standard_message.strip():
-            parts = [
-                "Beste verhuurder,",
-                f"{opening} Vooral {specific} spreken ons aan.",
-                profile.standard_message.strip(),
-            ]
-            for text in mandatory:
-                append_once(parts, text)
-            parts.extend(["Met vriendelijke groet,", closing])
-            return "\n\n".join(parts)
+            return self._complete_letter(profile.standard_message.strip(), mandatory)
         details = " ".join(profile.applicant_details)
         lifestyle = ", ".join(profile.lifestyle)
         other_applicants = ", ".join(name for name in profile.applicants if name != sender)
@@ -82,3 +76,24 @@ class DeterministicDutchResponseProvider:
             ]
         )
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _complete_letter(letter: str, mandatory: list[str]) -> str:
+        normalized_letter = DeterministicDutchResponseProvider._normalized_text(letter)
+        missing = [
+            item
+            for item in mandatory
+            if item
+            and DeterministicDutchResponseProvider._normalized_text(item) not in normalized_letter
+        ]
+        if not missing:
+            return letter
+        addition = "\n\n".join(missing)
+        closing = re.search(r"(?im)^\s*met vriendelijke groet\s*,?\s*$", letter)
+        if closing is None:
+            return f"{letter.rstrip()}\n\n{addition}"
+        return f"{letter[: closing.start()].rstrip()}\n\n{addition}\n\n{letter[closing.start() :].lstrip()}"
+
+    @staticmethod
+    def _normalized_text(value: str) -> str:
+        return " ".join(value.casefold().split())

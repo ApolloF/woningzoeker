@@ -32,6 +32,24 @@ def test_slightly_expensive_listing_goes_to_review_not_ignore() -> None:
     assert RuleEngine().evaluate(listing(rent_total=Decimal("1725")), Criteria()).decision is Decision.REVIEW
 
 
+def test_fast_mode_accepts_soft_margin_and_small_area_while_careful_mode_does_not() -> None:
+    candidate = listing(rent_total=Decimal("1725"), area_m2=Decimal("32"))
+    assert (
+        RuleEngine().evaluate(
+            candidate,
+            Criteria(auto_react_aggressiveness="fast", auto_react_min_score=60),
+        ).decision
+        is Decision.AUTO_REACT
+    )
+    assert (
+        RuleEngine().evaluate(
+            candidate,
+            Criteria(auto_react_aggressiveness="careful", auto_react_min_score=60),
+        ).decision
+        is Decision.REVIEW
+    )
+
+
 def test_missing_data_goes_to_review() -> None:
     assert (
         RuleEngine().evaluate(listing(area_m2=None, property_type=None), Criteria()).decision
@@ -52,6 +70,17 @@ def test_hard_income_requirement_is_configurable_review_criterion() -> None:
         Criteria(review_hard_income_requirements=False),
     )
     assert disabled.decision is Decision.AUTO_REACT
+
+
+def test_fast_mode_still_blocks_income_above_configured_limit() -> None:
+    result = RuleEngine().evaluate(
+        listing(description="Minimaal bruto maandinkomen van € 5.000 vereist."),
+        Criteria(
+            max_required_monthly_income=Decimal("4500"),
+            auto_react_aggressiveness="fast",
+        ),
+    )
+    assert result.decision is Decision.REVIEW
 
 
 def test_room_and_expired_listing_are_ignored() -> None:

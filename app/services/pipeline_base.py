@@ -155,13 +155,14 @@ class Pipeline:
                             rule_results,
                             summary,
                             old_raw.get("_llm"),
+                            criteria,
                         )
                 else:
                     llm_run = self.llm_service.generate(normalized, profile, deterministic_draft)
                     draft = llm_run.draft
                     if self.llm_service.enabled:
                         decision, rule_results, summary = self._apply_llm_safety(
-                            decision, rule_results, summary, llm_run
+                            decision, rule_results, summary, llm_run, criteria
                         )
 
             listing = existing or Listing(
@@ -194,6 +195,9 @@ class Pipeline:
                     "model": llm_run.model,
                     "error": llm_run.error,
                     "needs_review": llm_run.result.needs_review if llm_run.result else None,
+                    "suitable_for_two": (
+                        llm_run.result.suitable_for_two if llm_run.result else None
+                    ),
                     "explanation": llm_run.result.explanation if llm_run.result else None,
                     "unusual_requirements": (llm_run.result.unusual_requirements if llm_run.result else []),
                 }
@@ -261,15 +265,21 @@ class Pipeline:
         rules: list[RuleResult],
         summary: str,
         raw_meta: object,
+        criteria: Criteria,
     ) -> tuple[Decision, list[RuleResult], str]:
+        fast = criteria.auto_react_aggressiveness == "fast"
         if not isinstance(raw_meta, dict):
-            if decision is Decision.AUTO_REACT:
+            if decision is Decision.AUTO_REACT and not fast:
                 decision = Decision.REVIEW
             rules.append(
                 RuleResult(
                     rule="llm_analysis",
                     outcome="review",
-                    detail="Eerdere AI-veiligheidscontrole ontbreekt; opnieuw beoordelen vereist.",
+                    detail=(
+                        "Eerdere AI-controle ontbreekt; snelle modus gebruikt de harde regels."
+                        if fast
+                        else "Eerdere AI-veiligheidscontrole ontbreekt; opnieuw beoordelen vereist."
+                    ),
                 )
             )
             return decision, rules, f"{summary} Eerdere AI-controle ontbreekt."
@@ -298,9 +308,17 @@ class Pipeline:
                 detail=detail,
             )
         )
-        if needs_review and decision is Decision.AUTO_REACT:
+        suitable_for_two = raw_meta.get("suitable_for_two")
+        hard_llm_block = suitable_for_two is False
+        if (hard_llm_block or (needs_review and not fast)) and decision is Decision.AUTO_REACT:
             decision = Decision.REVIEW
-        suffix = "Handmatige controle vereist." if needs_review else "Geen tekstuele blokkade gevonden."
+        suffix = (
+            "Snelle modus laat deze onzekerheid niet wachten."
+            if needs_review and fast and not hard_llm_block
+            else "Handmatige controle vereist."
+            if needs_review
+            else "Geen tekstuele blokkade gevonden."
+        )
         return decision, rules, f"{summary} AI (opgeslagen): {detail} {suffix}"
 
     @staticmethod
@@ -309,18 +327,29 @@ class Pipeline:
         rules: list[RuleResult],
         summary: str,
         run: LLMRun,
+        criteria: Criteria,
     ) -> tuple[Decision, list[RuleResult], str]:
+        fast = criteria.auto_react_aggressiveness == "fast"
         if run.error or not run.result:
             rules.append(
                 RuleResult(
                     rule="llm_analysis",
                     outcome="review",
-                    detail="LLM niet beschikbaar; deterministische concepttekst gebruikt.",
+                    detail=(
+                        "LLM niet beschikbaar; snelle modus gebruikt het vaste bericht en harde regels."
+                        if fast
+                        else "LLM niet beschikbaar; deterministische concepttekst gebruikt."
+                    ),
                 )
             )
-            if decision is Decision.AUTO_REACT:
+            if decision is Decision.AUTO_REACT and not fast:
                 decision = Decision.REVIEW
-            return decision, rules, f"{summary} LLM-analyse mislukt; handmatige controle vereist."
+            suffix = (
+                "Snelle modus wacht niet op de LLM."
+                if fast
+                else "LLM-analyse mislukt; handmatige controle vereist."
+            )
+            return decision, rules, f"{summary} {suffix}"
 
         result = run.result
         llm_requires_review = (
@@ -333,10 +362,15 @@ class Pipeline:
                 detail=result.explanation,
             )
         )
-        if llm_requires_review and decision is Decision.AUTO_REACT:
+        hard_llm_block = result.suitable_for_two is False
+        if (hard_llm_block or (llm_requires_review and not fast)) and decision is Decision.AUTO_REACT:
             decision = Decision.REVIEW
         suffix = (
-            "Handmatige controle vereist." if llm_requires_review else "Geen tekstuele blokkade gevonden."
+            "Snelle modus laat deze onzekerheid niet wachten."
+            if llm_requires_review and fast and not hard_llm_block
+            else "Handmatige controle vereist."
+            if llm_requires_review
+            else "Geen tekstuele blokkade gevonden."
         )
         return decision, rules, f"{summary} LLM: {result.explanation} {suffix}"
 
@@ -347,6 +381,7 @@ class Pipeline:
             json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode()
         ).hexdigest()
         relevant = {
+            "draft_version": 2,
             "title": listing.title,
             "rent_total": str(listing.rent_total),
             "area_m2": str(listing.area_m2),

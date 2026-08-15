@@ -3,7 +3,7 @@ from typing import Any
 
 from app.config import Settings
 from app.models import Decision
-from app.schemas import ApplicantProfileData, NormalizedListing, RuleResult
+from app.schemas import ApplicantProfileData, Criteria, NormalizedListing, RuleResult
 from app.services.llm import (
     BaseHTTPProvider,
     ListingLLMResult,
@@ -110,6 +110,7 @@ def test_llm_can_only_downgrade_auto_react() -> None:
         [RuleResult(rule="base", outcome="pass", detail="ok")],
         "Deterministisch passend.",
         run,
+        Criteria(),
     )
     assert decision is Decision.REVIEW
     assert rules[-1].rule == "llm_analysis"
@@ -128,6 +129,7 @@ def test_cached_llm_review_cannot_flip_to_auto_react() -> None:
             "explanation": "De advertentie bevat een onduidelijke voorwaarde.",
             "unusual_requirements": [],
         },
+        Criteria(),
     )
     assert decision is Decision.REVIEW
     assert rules[-1].outcome == "review"
@@ -140,6 +142,7 @@ def test_missing_cached_llm_result_fails_closed() -> None:
         [],
         "Deterministisch passend.",
         None,
+        Criteria(),
     )
     assert decision is Decision.REVIEW
     assert rules[-1].rule == "llm_analysis"
@@ -154,3 +157,42 @@ def test_exact_mode_keeps_own_draft_and_light_mode_enforces_guarantor() -> None:
     controlled = ListingLLMService._controlled_draft("Licht aangepast.", own, light)
     assert controlled.startswith("Licht aangepast.")
     assert light.guarantor_wording in controlled
+
+
+def test_fast_mode_does_not_wait_for_llm_uncertainty_but_respects_explicit_rejection() -> None:
+    uncertain = LLMRun(
+        draft="Concept",
+        result=ListingLLMResult(
+            suitable_for_two=None,
+            unusual_requirements=["inkomenseis"],
+            needs_review=True,
+            explanation="Onzeker.",
+            response_draft_nl="Concept",
+        ),
+        provider="openai",
+        model="test",
+    )
+    decision, _, summary = Pipeline._apply_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Passend.",
+        uncertain,
+        Criteria(auto_react_aggressiveness="fast"),
+    )
+    assert decision is Decision.AUTO_REACT
+    assert "niet wachten" in summary
+
+    rejected = uncertain.result.model_copy(update={"suitable_for_two": False})
+    decision, _, _ = Pipeline._apply_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Passend.",
+        LLMRun(
+            draft=uncertain.draft,
+            result=rejected,
+            provider=uncertain.provider,
+            model=uncertain.model,
+        ),
+        Criteria(auto_react_aggressiveness="fast"),
+    )
+    assert decision is Decision.REVIEW

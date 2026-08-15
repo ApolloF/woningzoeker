@@ -256,6 +256,7 @@ def settings_page(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
 @app.post("/settings/criteria")
 def update_criteria(
     request: Request,
+    background_tasks: BackgroundTasks,
     csrf_token: Annotated[str, Form()],
     accepted_cities: Annotated[str, Form()],
     min_area_m2: Annotated[float, Form()],
@@ -265,6 +266,8 @@ def update_criteria(
     review_hard_income_requirements: Annotated[bool, Form()] = False,
     max_required_monthly_income: Annotated[str, Form()] = "",
     max_listing_age_minutes: Annotated[str, Form()] = "180",
+    auto_react_aggressiveness: Annotated[str, Form()] = "balanced",
+    auto_react_min_score: Annotated[int, Form()] = 75,
     telegram_listing_filter: Annotated[str, Form()] = "auto_react_or_score",
     telegram_min_score: Annotated[int, Form()] = 75,
     telegram_notify_assistance: Annotated[bool, Form()] = False,
@@ -296,6 +299,8 @@ def update_criteria(
             "max_listing_age_minutes": (
                 int(max_listing_age_minutes) if max_listing_age_minutes.strip() else None
             ),
+            "auto_react_aggressiveness": auto_react_aggressiveness,
+            "auto_react_min_score": auto_react_min_score,
             "telegram_listing_filter": telegram_listing_filter,
             "telegram_min_score": telegram_min_score,
             "telegram_notify_assistance": telegram_notify_assistance,
@@ -307,4 +312,5 @@ def update_criteria(
     record.config = updated.model_dump(mode="json")
     add_audit(db, "CRITERIA_UPDATED", "Zoekcriteria bijgewerkt")
     db.commit()
+    background_tasks.add_task(pipeline.run_all)
     return RedirectResponse("/settings", status_code=303)

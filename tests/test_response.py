@@ -57,5 +57,37 @@ def test_optional_standard_message_is_used_as_the_draft_base() -> None:
     )
     draft = DeterministicDutchResponseProvider().generate(listing, profile)
     assert "Wij zijn een rustig stel." in draft
-    assert "Havenstraat" in draft
     assert "Garant." in draft
+    assert draft.count("Beste verhuurder") == 0
+    assert draft.count("Met vriendelijke groet") == 0
+
+
+def test_complete_standard_letter_is_not_wrapped_with_duplicate_greeting_or_closing() -> None:
+    listing = NormalizedListing(
+        source_name="test",
+        external_id="x",
+        url="https://example.test/x",
+        title="Kleine Bergstraat",
+        address="Kleine Bergstraat",
+        city="Groningen",
+    )
+    letter = (
+        "Beste verhuurder,\n\nZojuist zag ik jullie woning.\n\n"
+        "Financieel in orde. Garantsteller beschikbaar.\n\n"
+        "Met vriendelijke groet,\n\nFlorian Greeven & Sara Hutchinson"
+    )
+    profile = ApplicantProfileData(
+        applicants=["Florian Greeven", "Sara Hutchinson"],
+        current_city="Groningen",
+        current_situation="We wonen samen.",
+        applicant_details=["We werken in Groningen."],
+        financial_wording="Financieel in orde.",
+        guarantor_wording="Garantsteller beschikbaar.",
+        lifestyle=["rustig"],
+        desired_tenure="lang wonen",
+        standard_message=letter,
+    )
+    draft = DeterministicDutchResponseProvider().generate(listing, profile)
+    assert draft == letter
+    assert draft.count("Beste verhuurder") == 1
+    assert draft.count("Met vriendelijke groet") == 1
