@@ -18,6 +18,7 @@ from app.main_base import app, auth, page_context, pipeline, settings, templates
 from app.models import (
     ApplicantProfile,
     AuditEvent,
+    Decision,
     Listing,
     SearchConfig,
     SourceConfig,
@@ -30,7 +31,7 @@ from app.services.audit import add_audit
 reaction_service = pipeline.reaction_service
 ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
 SESSION_SOURCES = {"huurwoningen", "pararius"}
-LOGIN_CHECK_SOURCES = {"huurwoningen", "pararius", "woldring"}
+LOGIN_CHECK_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
 SOURCE_MODE_LABELS = {
     SourceMode.MONITOR_ONLY.value: "Alleen volgen",
     SourceMode.DRAFT_ONLY.value: "Concept maken",
@@ -144,6 +145,32 @@ def archive_stale_listings(
     for listing in rows:
         listing.archived_at = archived_at
     add_audit(db, "LISTINGS_ARCHIVED", f"{len(rows)} afgewezen of verwijderde advertenties opgeruimd")
+    db.commit()
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/admin/listings/archive-review")
+def archive_review_listings(
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    rows = db.scalars(
+        select(Listing).where(
+            Listing.archived_at.is_(None),
+            Listing.decision == Decision.REVIEW.value,
+        )
+    ).all()
+    archived_at = datetime.now(UTC)
+    for listing in rows:
+        listing.archived_at = archived_at
+    add_audit(
+        db,
+        "REVIEW_LISTINGS_ARCHIVED",
+        f"{len(rows)} te beoordelen advertenties opgeruimd",
+        data={"count": len(rows)},
+    )
     db.commit()
     return RedirectResponse("/", status_code=303)
 

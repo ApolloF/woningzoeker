@@ -16,6 +16,12 @@ for (const select of modeSelects) {
   select.addEventListener("change", () => markModesChanged());
 }
 
+for (const form of document.querySelectorAll("form[data-confirm]")) {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+  });
+}
+
 if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
 }

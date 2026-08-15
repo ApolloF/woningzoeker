@@ -22,7 +22,7 @@ from app.models import (
     Submission,
     SubmissionState,
 )
-from app.schemas import Criteria, PrivateContactData
+from app.schemas import Criteria, PrivateContactData, SourceCredentialData
 from app.services.crypto import CredentialCipher
 from app.services.reaction_browser import (
     REACTION_SPECS,
@@ -56,6 +56,73 @@ class FakeBrowser:
         )
 
 
+class FakeLoginLocator:
+    def __init__(self, page: FakeLoginPage, kind: str) -> None:
+        self.page = page
+        self.kind = kind
+
+    @property
+    def first(self) -> FakeLoginLocator:
+        return self
+
+    def count(self) -> int:
+        if self.kind == "password":
+            return 0 if self.page.logged_in else 1
+        return 1
+
+    def locator(self, selector: str) -> FakeLoginLocator:
+        if selector == "xpath=ancestor::form[1]":
+            return FakeLoginLocator(self.page, "form")
+        if "type='email'" in selector or "name*='email'" in selector:
+            return FakeLoginLocator(self.page, "username")
+        if "button[data-ajax-submit]" in selector:
+            self.page.submit_selector = selector
+            return FakeLoginLocator(self.page, "submit")
+        raise AssertionError(f"unexpected selector: {selector}")
+
+    def fill(self, value: str) -> None:
+        if self.kind == "username":
+            self.page.username = value
+        elif self.kind == "password":
+            self.page.password = value
+        else:
+            raise AssertionError(f"cannot fill {self.kind}")
+
+    def click(self) -> None:
+        assert self.kind == "submit"
+        self.page.logged_in = True
+
+    def wait_for(self, *, state: str, timeout: int) -> None:
+        assert state == "hidden"
+        assert timeout == 10_000
+        assert self.page.logged_in
+
+
+class FakeLoginPage:
+    def __init__(self) -> None:
+        self.logged_in = False
+        self.goto_url: str | None = None
+        self.username: str | None = None
+        self.password: str | None = None
+        self.submit_selector: str | None = None
+
+    def goto(self, url: str, *, wait_until: str) -> None:
+        self.goto_url = url
+        assert wait_until == "domcontentloaded"
+
+    def locator(self, selector: str) -> FakeLoginLocator:
+        assert selector == "input[type='password']:visible"
+        return FakeLoginLocator(self, "password")
+
+    def wait_for_load_state(self, state: str, *, timeout: int) -> None:
+        assert state == "networkidle"
+        assert timeout == 10_000
+
+
+class FakeLoginContext:
+    pass
+
+
 def test_supported_source_specs_cover_all_adapters() -> None:
     assert set(REACTION_SPECS) == {
         "123wonen_groningen",
@@ -84,6 +151,31 @@ def test_only_ordinary_legal_confirmations_can_be_auto_accepted() -> None:
     assert ReactionBrowser._legal_checkbox_action("Akkoord met privacy en voorwaarden", False) == "review"
     assert ReactionBrowser._legal_checkbox_action("Marketing nieuwsbrief toestemming", True) == "review"
     assert ReactionBrowser._legal_checkbox_action("Ik verklaar mijn identiteit correct", True) == "review"
+
+
+def test_campus_login_renews_expired_session_with_current_ajax_form(monkeypatch: Any) -> None:
+    settings = Settings(_env_file=None)
+    browser = ReactionBrowser(settings)
+    page = FakeLoginPage()
+    monkeypatch.setattr(browser, "_dismiss_cookie_banner", lambda _page: None)
+    monkeypatch.setattr(browser, "_has_auth_challenge", lambda _page: False)
+    monkeypatch.setattr(browser, "_has_challenge", lambda _page: False)
+
+    result = browser._ensure_login(
+        page,  # type: ignore[arg-type]
+        FakeLoginContext(),  # type: ignore[arg-type]
+        REACTION_SPECS["campus_groningen"],
+        "https://www.campusgroningen.com/woning/test-1",
+        SourceCredentialData(username="user@example.test", password="secret"),
+        "campus_groningen",
+    )
+
+    assert result is None
+    assert page.goto_url == "https://www.campusgroningen.com/login"
+    assert page.username == "user@example.test"
+    assert page.password == "secret"
+    assert page.submit_selector is not None
+    assert "button[data-ajax-submit]" in page.submit_selector
 
 
 def test_sent_submission_blocks_duplicate_canonical_reaction(monkeypatch: Any) -> None:

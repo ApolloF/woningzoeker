@@ -20,6 +20,7 @@
   <div class="section-title">
     <div><p class="eyebrow">Laatste 100</p><h2>Advertenties</h2></div>
     <div class="cleanup-actions">
+      {% if counts.get('REVIEW', 0) %}<form method="post" action="/admin/listings/archive-review" data-confirm="Alle {{ counts.get('REVIEW', 0) }} te beoordelen advertenties uit het overzicht verwijderen? Je kunt ze daarna nog herstellen."><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary danger-text" type="submit">Verwijder alle {{ counts.get('REVIEW', 0) }} te beoordelen</button></form>{% endif %}
       {% if cleanup_count %}<form method="post" action="/admin/listings/archive-stale"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">Ruim {{ cleanup_count }} afgewezen/verwijderde op</button></form>{% endif %}
       {% if archived_count %}<form method="post" action="/admin/listings/restore-archived"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="linkish" type="submit">Herstel {{ archived_count }} gearchiveerde</button></form>{% endif %}
     </div>

@@ -65,6 +65,7 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     ),
     "campus_groningen": ReactionSpec(
         account_required=True,
+        login_url="https://www.campusgroningen.com/login",
     ),
     "bulten_vastgoed": ReactionSpec(
         form_selectors=("form:has(textarea):has(button[type='submit'])",),
@@ -339,19 +340,28 @@ class ReactionBrowser:
                     "De beveiligde browsersessie is verlopen; log opnieuw in via de sessie-instelling.",
                 ),
             )
-        username = page.locator("input[type='email']:visible").first
+        form = password.locator("xpath=ancestor::form[1]")
+        scope = form if form.count() else page
+        username = scope.locator("input[type='email']:visible").first
         if not username.count():
-            username = page.locator("input[name*='email' i]:visible, input[name*='user' i]:visible").first
+            username = scope.locator(
+                "input[name*='email' i]:visible, input[name*='user' i]:visible"
+            ).first
         if not username.count():
             return self._review("LOGIN_FORM_UNKNOWN", "Het inlogformulier is veranderd.")
         username.fill(credential.username)
         password.fill(credential.password)
-        submit = page.locator("button[type='submit']:visible, input[type='submit']:visible").first
+        submit = scope.locator(
+            "button[type='submit']:visible, input[type='submit']:visible, "
+            "button[data-ajax-submit]:visible"
+        ).first
         if not submit.count():
             return self._review("LOGIN_FORM_UNKNOWN", "Geen veilige inlogknop gevonden.")
         submit.click()
         with contextlib.suppress(TimeoutError):
             page.wait_for_load_state("networkidle", timeout=10_000)
+        with contextlib.suppress(TimeoutError):
+            password.wait_for(state="hidden", timeout=10_000)
         if self._has_auth_challenge(page):
             return self._with_storage(
                 context,
