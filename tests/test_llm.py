@@ -65,6 +65,15 @@ def test_llm_input_excludes_sensitive_profile_fields() -> None:
     assert str(listing().url) not in raw
 
 
+def test_llm_receives_safe_optional_base_message() -> None:
+    raw = BaseHTTPProvider._input(
+        listing(),
+        profile().model_copy(update={"standard_message": "Wij zijn een rustig stel."}),
+        "Veilig concept",
+    )
+    assert json.loads(raw)["applicants"]["optional_base_message"] == "Wij zijn een rustig stel."
+
+
 def test_provider_schema_only_uses_supported_structural_keywords() -> None:
     unsupported = {"default", "examples", "maxItems", "maxLength", "minItems", "minLength", "title"}
 

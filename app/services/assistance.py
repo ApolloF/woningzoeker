@@ -41,6 +41,10 @@ INSTRUCTION_MAP = {
         "De opgeslagen sessie is verlopen. Controleer de accountgegevens bij Instellingen en kies "
         "Opnieuw proberen, of reageer handmatig via de bronsite."
     ),
+    "REAUTHENTICATION_REQUIRED": (
+        "De site vraagt opnieuw om Google-inloggen, twee-factorverificatie of een nieuwe sessie. "
+        "Werk de beveiligde browsersessie bij onder Instellingen en kies daarna Opnieuw proberen."
+    ),
     "LOGIN_FAILED": (
         "Controleer gebruikersnaam en wachtwoord bij Instellingen. Als de site extra verificatie "
         "vraagt, rond de reactie handmatig af en bevestig die hier."

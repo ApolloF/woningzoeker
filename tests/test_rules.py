@@ -38,6 +38,21 @@ def test_missing_data_goes_to_review() -> None:
     )
 
 
+def test_hard_income_requirement_is_configurable_review_criterion() -> None:
+    result = RuleEngine().evaluate(
+        listing(description="Minimaal bruto maandinkomen van € 5.000 vereist."),
+        Criteria(max_required_monthly_income=Decimal("4500")),
+    )
+    assert result.decision is Decision.REVIEW
+    assert any(rule.rule == "hard_income_requirement" for rule in result.rules)
+
+    disabled = RuleEngine().evaluate(
+        listing(description="Minimaal bruto maandinkomen van € 5.000 vereist."),
+        Criteria(review_hard_income_requirements=False),
+    )
+    assert disabled.decision is Decision.AUTO_REACT
+
+
 def test_room_and_expired_listing_are_ignored() -> None:
     engine = RuleEngine()
     assert engine.evaluate(listing(property_type="kamer"), Criteria()).decision is Decision.IGNORE

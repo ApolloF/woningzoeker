@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal, InvalidOperation
 
 from app.models import Decision
 from app.schemas import Criteria, Evaluation, NormalizedListing, RuleResult
@@ -13,9 +14,19 @@ class RuleEngine:
         re.I,
     )
     AMBIGUOUS_REQUIREMENT_PATTERN = re.compile(
-        r"(inkomenseis|bruto\s+(?:maand)?inkomen|jaarrekening|creditcheck|id-check|"
+        r"(jaarrekening|creditcheck|id-check|"
         r"expats?\s+(?:only|uitsluitend)|short[- ]?stay|tijdelijk contract|diplomatenclausule|"
         r"identiteitsbewijs|paspoort|arbeidscontract)",
+        re.I,
+    )
+    HARD_INCOME_PATTERN = re.compile(
+        r"(?:inkomenseis|(?:bruto|netto)\s*(?:maand|jaar)?inkomen|vast\s+inkomen|"
+        r"minimaal\s+(?:een\s+)?inkomen|"
+        r"(?:minimaal|ten minste|tenminste)\s+\d+(?:[.,]\d+)?\s*x\s*(?:de\s*)?huur)",
+        re.I,
+    )
+    INCOME_AMOUNT_PATTERN = re.compile(
+        r"(?:€|eur(?:o)?\.?\s*)\s*(\d{1,3}(?:[.\s]\d{3})+|\d+)(?:[,.](\d{1,2}))?",
         re.I,
     )
 
@@ -98,9 +109,7 @@ class RuleEngine:
             score += 15
             area_ok = True
             rules.append(
-                RuleResult(
-                    rule="area", outcome="pass", detail=f"{listing.area_m2} m²", score_delta=15
-                )
+                RuleResult(rule="area", outcome="pass", detail=f"{listing.area_m2} m²", score_delta=15)
             )
         else:
             score -= 15
@@ -118,8 +127,30 @@ class RuleEngine:
                 )
             )
 
+        hard_income_requirement = criteria.review_hard_income_requirements and bool(
+            self.HARD_INCOME_PATTERN.search(description)
+        )
+        if hard_income_requirement:
+            amount = self._income_amount(description)
+            detail = "Advertentie bevat een harde inkomenseis."
+            if amount is not None:
+                detail = f"Advertentie noemt een inkomenseis van circa € {amount:g}."
+                if (
+                    criteria.max_required_monthly_income is not None
+                    and amount > criteria.max_required_monthly_income
+                ):
+                    detail += " Dit ligt boven jouw ingestelde grens."
+            rules.append(RuleResult(rule="hard_income_requirement", outcome="review", detail=detail))
+
         score = max(0, min(100, score))
-        auto_safe = price_ok and area_ok and accepted_type and score >= 75 and not ambiguous
+        auto_safe = (
+            price_ok
+            and area_ok
+            and accepted_type
+            and score >= 75
+            and not ambiguous
+            and not hard_income_requirement
+        )
         decision = Decision.AUTO_REACT if auto_safe else Decision.REVIEW
         summary = (
             "Voldoet aan de harde, deterministische criteria."
@@ -127,6 +158,18 @@ class RuleEngine:
             else "Een of meer gegevens/voorkeuren vereisen beoordeling."
         )
         return Evaluation(decision=decision, score=score, rules=rules, summary=summary)
+
+    @classmethod
+    def _income_amount(cls, description: str) -> Decimal | None:
+        match = cls.INCOME_AMOUNT_PATTERN.search(description)
+        if not match:
+            return None
+        whole = match.group(1).replace(".", "").replace(" ", "")
+        cents = (match.group(2) or "0").ljust(2, "0")
+        try:
+            return Decimal(f"{whole}.{cents}")
+        except InvalidOperation:
+            return None
 
     @staticmethod
     def _ignored(rule: str, detail: str) -> Evaluation:

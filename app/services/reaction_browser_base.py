@@ -62,11 +62,12 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     ),
     "pandomo": ReactionSpec(
         action_href_parts=("#inschrijven-huur-modal",),
-        review_only_code="SOURCE_FLOW_UNVERIFIED",
     ),
     "campus_groningen": ReactionSpec(
         account_required=True,
-        review_only_code="REGISTRATION_OR_PURCHASE_FLOW",
+    ),
+    "bulten_vastgoed": ReactionSpec(
+        form_selectors=("form:has(textarea):has(button[type='submit'])",),
     ),
 }
 
@@ -244,10 +245,23 @@ class ReactionBrowser:
         password = page.locator("input[type='password']:visible").first
         if not password.count():
             return None
+        if self._has_auth_challenge(page):
+            return self._with_storage(
+                context,
+                self._review("REAUTHENTICATION_REQUIRED", "De site vraagt om extra inlogverificatie."),
+            )
         if self._has_challenge(page):
             return self._with_storage(
                 context,
                 self._review("CAPTCHA_REQUIRED", "Inloggen vereist een menselijke CAPTCHA-controle."),
+            )
+        if not credential.username or not credential.password:
+            return self._with_storage(
+                context,
+                self._review(
+                    "REAUTHENTICATION_REQUIRED",
+                    "De beveiligde browsersessie is verlopen; log opnieuw in via de sessie-instelling.",
+                ),
             )
         username = page.locator("input[type='email']:visible").first
         if not username.count():
@@ -262,6 +276,11 @@ class ReactionBrowser:
         submit.click()
         with contextlib.suppress(TimeoutError):
             page.wait_for_load_state("networkidle", timeout=10_000)
+        if self._has_auth_challenge(page):
+            return self._with_storage(
+                context,
+                self._review("REAUTHENTICATION_REQUIRED", "De site vraagt om extra inlogverificatie."),
+            )
         if page.locator("input[type='password']:visible").count():
             return self._with_storage(
                 context,
@@ -291,6 +310,18 @@ class ReactionBrowser:
             else:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             return
+
+    @staticmethod
+    def _has_auth_challenge(page: Page) -> bool:
+        text = page.locator("body").inner_text().lower()
+        return bool(
+            page.locator(
+                "input[autocomplete='one-time-code'], input[name*='otp' i], input[name*='code' i]"
+            ).count()
+            or any(
+                marker in text for marker in ("two-factor", "twee-factor", "verificatiecode", "authenticator")
+            )
+        )
 
     @staticmethod
     def _has_challenge(page: Page) -> bool:

@@ -1,6 +1,6 @@
 # Woningzoeker
 
-A self-hosted rental-listing agent for Groningen. It polls ten sources every minute, normalizes and
+A self-hosted rental-listing agent for Groningen. It polls eleven sources every minute, normalizes and
 deduplicates homes, applies deterministic criteria, uses a structured-output LLM for textual safety
 and Dutch drafting, and can prepare or submit a controlled viewing request through Chromium.
 
@@ -8,6 +8,7 @@ and Dutch drafting, and can prepare or submit a controlled viewing request throu
 
 | Source | Discovery | Reaction behavior |
 |---|---|---|
+| Bulten Vastgoed | HTTP | Current offer portal; a recognized non-binding form can be sent automatically |
 | 123Wonen Groningen | HTTP | Public form; CAPTCHA becomes human review |
 | Woldring Verhuur | HTTP | Managed encrypted account login |
 | Huurwoningen.nl | Chromium | Managed login; CAPTCHA becomes human review |
@@ -20,7 +21,8 @@ and Dutch drafting, and can prepare or submit a controlled viewing request throu
 | Funda rentals | Chromium | Public viewing-request form |
 
 Every discovery adapter is isolated. A zero-result parse is a health failure, not a successful empty
-run. CAPTCHA pages are reported and never bypassed.
+run. Every connected source can be placed in `AUTO_REACT`; only recognized, non-binding forms are
+submitted. CAPTCHA, login challenges, document uploads and legal confirmations are reported and never bypassed.
 
 ## Quick start
 
@@ -40,8 +42,9 @@ run. CAPTCHA pages are reported and never bypassed.
    docker compose run --rm --no-deps app python scripts/smoke_sources.py
    ```
 
-5. Open `http://127.0.0.1:8000/login`. In Settings, save private contact details and source accounts,
-   then test individual listings with "Formulier als dry-run voorbereiden".
+5. Open `http://127.0.0.1:8000/login`. In Settings, save private contact details, the editable
+   applicant profile, source accounts and (where needed) an encrypted Google/2FA browser session.
+   Then test individual listings with "Formulier als dry-run voorbereiden".
 
 Keep `DRY_RUN=true` and `AUTO_REACT_ENABLED=false` while validating screenshots and audit outcomes.
 After each desired source has passed dry-run, set that source to `AUTO_REACT`. Only then set
@@ -79,6 +82,11 @@ From the queue you can:
 The scheduler keeps every other source running while an item waits for help. Failed non-consequential
 browser attempts are retried every three minutes, up to `REACTION_MAX_ATTEMPTS`; stale in-progress
 attempts are recovered after a restart. CAPTCHA is detected and escalated, never solved or bypassed.
+
+For Pararius and Huurwoningen.nl, run `python -m app.cli connect-source <source>` in an interactive
+local app environment to sign in with Google and complete any two-factor check yourself. The resulting
+Playwright browser session is stored encrypted; a stale session is sent to **Hulp nodig** for a fresh
+interactive sign-in rather than attempting to bypass the provider's controls.
 
 The dashboard and `GET /api/automation/readiness` show every activation blocker. A ready system has a
 running scheduler, an enabled LLM provider, encrypted contact details, at least one source in

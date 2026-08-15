@@ -44,6 +44,7 @@ class FakeBrowser:
 def test_supported_source_specs_cover_all_adapters() -> None:
     assert set(REACTION_SPECS) == {
         "123wonen_groningen",
+        "bulten_vastgoed",
         "campus_groningen",
         "funda_rentals",
         "gruno_vastgoed",

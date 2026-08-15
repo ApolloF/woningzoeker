@@ -30,3 +30,28 @@ def test_draft_mentions_real_listing_characteristics() -> None:
     assert "37 m²" in draft
     assert "1 slaapkamer" in draft
     assert "Garantstellertekst" not in draft
+
+
+def test_optional_standard_message_is_used_as_the_draft_base() -> None:
+    listing = NormalizedListing(
+        source_name="test",
+        external_id="x",
+        url="https://example.test/x",
+        title="Havenstraat",
+        address="Havenstraat",
+        city="Groningen",
+    )
+    profile = ApplicantProfileData(
+        applicants=["Florian"],
+        current_city="Groningen",
+        current_situation="Samenwonend.",
+        applicant_details=["Werkt in Groningen."],
+        financial_wording="Financieel.",
+        guarantor_wording="Garant.",
+        lifestyle=["rustig"],
+        desired_tenure="lang wonen",
+        standard_message="Wij zijn een rustig stel.",
+    )
+    draft = DeterministicDutchResponseProvider().generate(listing, profile)
+    assert "Wij zijn een rustig stel." in draft
+    assert "Havenstraat" in draft

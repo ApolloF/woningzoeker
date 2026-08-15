@@ -22,6 +22,14 @@ class DeterministicDutchResponseProvider:
         specific = " en ".join(characteristics[:2])
 
         applicants = " en ".join(profile.applicants)
+        if profile.standard_message.strip():
+            return (
+                "Beste verhuurder,\n\n"
+                f"Met veel interesse reageren wij op de woning aan {listing.address}. "
+                f"Vooral {specific} spreken ons aan.\n\n"
+                f"{profile.standard_message.strip()}\n\n"
+                f"Met vriendelijke groet,\n{applicants}"
+            )
         details = " ".join(profile.applicant_details)
         lifestyle = ", ".join(profile.lifestyle)
         return (

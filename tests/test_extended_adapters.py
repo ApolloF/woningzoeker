@@ -2,6 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.adapters import ALL_ADAPTERS
+from app.adapters.bulten import BultenVastgoedAdapter
 from app.adapters.campus_groningen import CampusGroningenAdapter
 from app.adapters.funda import FundaRentalAdapter
 from app.adapters.gruno import GrunoVastgoedAdapter
@@ -22,6 +23,7 @@ def test_requested_sources_are_registered() -> None:
     names = {adapter.source_name for adapter in ALL_ADAPTERS}
     assert names == {
         "123wonen_groningen",
+        "bulten_vastgoed",
         "campus_groningen",
         "funda_rentals",
         "gruno_vastgoed",
@@ -57,6 +59,15 @@ def test_maxx_availability_parser() -> None:
     assert listings[0].external_id == "24244"
     assert listings[0].is_available is True
     assert listings[0].rent_total == Decimal("950.66")
+    assert listings[1].is_available is False
+
+
+def test_bulten_adapter_parses_current_homesearch_offers() -> None:
+    listings = BultenVastgoedAdapter().parse(fixture("bulten.html"))
+    assert listings[0].external_id == "833963902"
+    assert listings[0].address == "Oosterhamrikkade"
+    assert listings[0].area_m2 == 60
+    assert listings[0].is_available is True
     assert listings[1].is_available is False
 
 

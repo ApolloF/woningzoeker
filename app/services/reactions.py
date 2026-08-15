@@ -91,6 +91,35 @@ class ReactionService:
                 )
             db.commit()
 
+    def save_browser_session(self, source_name: str, storage_state: dict[str, Any]) -> None:
+        if not isinstance(storage_state, dict) or not storage_state:
+            raise ValueError("invalid browser session")
+        cipher = self._cipher()
+        with SessionLocal() as db:
+            source = db.scalar(select(SourceConfig).where(SourceConfig.name == source_name))
+            if source is None:
+                raise ValueError("unknown source")
+            record = db.scalar(
+                select(Credential).where(Credential.source_id == source.id, Credential.label == "default")
+            )
+            existing = (
+                SourceCredentialData.model_validate(cipher.decrypt(record.encrypted_payload))
+                if record
+                else None
+            )
+            updated = (
+                existing.model_copy(update={"storage_state": storage_state})
+                if existing
+                else SourceCredentialData(storage_state=storage_state)
+            )
+            encrypted = cipher.encrypt(updated.model_dump(mode="json"))
+            if record:
+                record.encrypted_payload = encrypted
+                record.last_error = None
+            else:
+                db.add(Credential(source_id=source.id, label="default", encrypted_payload=encrypted))
+            db.commit()
+
     def credential_statuses(self) -> dict[str, dict[str, Any]]:
         with SessionLocal() as db:
             rows = db.execute(
@@ -299,7 +328,12 @@ class ReactionService:
                     if outcome.storage_state:
                         updated = credential.model_copy(update={"storage_state": outcome.storage_state})
                         record.encrypted_payload = self._cipher().encrypt(updated.model_dump(mode="json"))
-                    if outcome.code in {"LOGIN_FAILED", "LOGIN_FORM_UNKNOWN", "CAPTCHA_REQUIRED"}:
+                    if outcome.code in {
+                        "LOGIN_FAILED",
+                        "LOGIN_FORM_UNKNOWN",
+                        "CAPTCHA_REQUIRED",
+                        "REAUTHENTICATION_REQUIRED",
+                    }:
                         record.last_error = outcome.summary[:500]
                     else:
                         record.last_error = None

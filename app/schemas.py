@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from app.models import Decision
 
@@ -58,6 +58,8 @@ class Criteria(BaseModel):
     )
     prefer_quiet: bool = True
     suitable_for_two_required: bool = True
+    review_hard_income_requirements: bool = True
+    max_required_monthly_income: Decimal | None = Field(default=None, ge=0)
 
 
 class RuleResult(BaseModel):
@@ -83,6 +85,7 @@ class ApplicantProfileData(BaseModel):
     guarantor_wording: str
     lifestyle: list[str]
     desired_tenure: str
+    standard_message: str = Field(default="", max_length=1800)
 
 
 class PrivateContactData(BaseModel):
@@ -105,9 +108,17 @@ class PrivateContactData(BaseModel):
 class SourceCredentialData(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    username: str = Field(min_length=1, max_length=254)
-    password: str = Field(min_length=1, max_length=500)
+    username: str = Field(default="", max_length=254)
+    password: str = Field(default="", max_length=500)
     storage_state: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def has_a_complete_auth_method(self) -> SourceCredentialData:
+        if bool(self.username) != bool(self.password):
+            raise ValueError("username and password must be provided together")
+        if not (self.storage_state or (self.username and self.password)):
+            raise ValueError("credentials or a browser session are required")
+        return self
 
 
 class LLMClassification(BaseModel):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -27,6 +28,7 @@ from app.services.audit import add_audit
 
 reaction_service = pipeline.reaction_service
 ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
+SESSION_SOURCES = {"huurwoningen", "pararius"}
 
 # Replace legacy implementations that cannot expose reaction/assistance state.
 app.router.routes[:] = [
@@ -255,6 +257,7 @@ def settings_page(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
             contact_configured=reaction_service.contact_is_configured(),
             credential_statuses=reaction_service.credential_statuses(),
             account_sources=ACCOUNT_SOURCES,
+            session_sources=SESSION_SOURCES,
             sources=sources,
             source_modes=[mode.value for mode in SourceMode],
             readiness=reaction_service.readiness(),
@@ -266,6 +269,42 @@ def settings_page(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
 def automation_readiness(request: Request) -> dict[str, object]:
     auth.require_session(request)
     return reaction_service.readiness()
+
+
+@app.post("/settings/profile")
+def update_applicant_profile(
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    applicants: Annotated[str, Form()],
+    current_city: Annotated[str, Form()],
+    current_situation: Annotated[str, Form()],
+    applicant_details: Annotated[str, Form()],
+    financial_wording: Annotated[str, Form()],
+    guarantor_wording: Annotated[str, Form()],
+    lifestyle: Annotated[str, Form()],
+    desired_tenure: Annotated[str, Form()],
+    standard_message: Annotated[str, Form()] = "",
+    db: Session = Depends(get_db),
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    record = db.get(ApplicantProfile, 1)
+    if record is None:
+        raise HTTPException(status_code=500, detail="applicant profile missing")
+    profile = ApplicantProfileData(
+        applicants=[item.strip() for item in applicants.splitlines() if item.strip()],
+        current_city=current_city.strip(),
+        current_situation=current_situation.strip(),
+        applicant_details=[item.strip() for item in applicant_details.splitlines() if item.strip()],
+        financial_wording=financial_wording.strip(),
+        guarantor_wording=guarantor_wording.strip(),
+        lifestyle=[item.strip() for item in lifestyle.splitlines() if item.strip()],
+        desired_tenure=desired_tenure.strip(),
+        standard_message=standard_message.strip(),
+    )
+    record.profile = profile.model_dump(mode="json")
+    add_audit(db, "APPLICANT_PROFILE_UPDATED", "Aanvragersprofiel bijgewerkt")
+    db.commit()
+    return RedirectResponse("/settings", status_code=303)
 
 
 @app.post("/settings/contact")
@@ -312,6 +351,26 @@ def update_source_credential(
         source_name,
         SourceCredentialData(username=username, password=password),
     )
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/sessions/{source_name}")
+def update_source_session(
+    source_name: str,
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    storage_state_json: Annotated[str, Form()],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    if source_name not in SESSION_SOURCES:
+        raise HTTPException(status_code=400, detail="source does not support browser sessions")
+    try:
+        storage_state = json.loads(storage_state_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail="invalid browser session JSON") from exc
+    if not isinstance(storage_state, dict):
+        raise HTTPException(status_code=422, detail="browser session must be a JSON object")
+    reaction_service.save_browser_session(source_name, storage_state)
     return RedirectResponse("/settings", status_code=303)
 
 

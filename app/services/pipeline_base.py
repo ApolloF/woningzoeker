@@ -133,7 +133,7 @@ class Pipeline:
             summary = evaluation.summary
             draft: str | None = None
             llm_run: LLMRun | None = None
-            content_hash = self._content_hash(normalized)
+            content_hash = self._content_hash(normalized, profile)
 
             if decision is not Decision.IGNORE:
                 deterministic_draft = self.response_provider.generate(normalized, profile)
@@ -255,7 +255,11 @@ class Pipeline:
         return decision, rules, f"{summary} LLM: {result.explanation} {suffix}"
 
     @staticmethod
-    def _content_hash(listing: NormalizedListing) -> str:
+    def _content_hash(listing: NormalizedListing, profile: ApplicantProfileData) -> str:
+        profile_payload = profile.model_dump(mode="json")
+        profile_fingerprint = hashlib.sha256(
+            json.dumps(profile_payload, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()
         relevant = {
             "title": listing.title,
             "rent_total": str(listing.rent_total),
@@ -265,6 +269,7 @@ class Pipeline:
             "description": listing.description,
             "availability": listing.availability_text,
             "is_available": listing.is_available,
+            "profile_fingerprint": profile_fingerprint,
         }
         payload = json.dumps(relevant, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(payload.encode()).hexdigest()

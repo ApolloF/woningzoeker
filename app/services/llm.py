@@ -85,6 +85,9 @@ class BaseHTTPProvider:
         safe_facts = [
             fact for fact in profile.applicant_details if not cls.SENSITIVE_PROFILE_PATTERN.search(fact)
         ]
+        standard_message = profile.standard_message.strip()
+        if cls.SENSITIVE_PROFILE_PATTERN.search(standard_message):
+            standard_message = ""
         payload = {
             "listing": {
                 "source": listing.source_name,
@@ -104,6 +107,7 @@ class BaseHTTPProvider:
                 "facts": safe_facts,
                 "lifestyle": profile.lifestyle,
                 "desired_tenure": profile.desired_tenure,
+                "optional_base_message": standard_message or None,
             },
             "safe_fallback_draft": deterministic_draft,
         }
@@ -118,7 +122,9 @@ class BaseHTTPProvider:
             "Schrijf een korte natuurlijke Nederlandse interesse-reactie die het adres en één of "
             "twee werkelijk genoemde woningkenmerken gebruikt. Verzin nooit inkomen, contracten, "
             "werkgevers, garanties, documenten of toestemming. Neem geen financiële of "
-            "garantstellertekst op. Geef alleen het gevraagde JSON-object terug."
+            "garantstellertekst op. Als optional_base_message is ingevuld, gebruik die dan als "
+            "persoonlijke basis en pas hem alleen aan op de concrete woning. Geef alleen het "
+            "gevraagde JSON-object terug."
         )
 
     @staticmethod

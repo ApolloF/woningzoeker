@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, Response
@@ -261,12 +262,22 @@ def update_criteria(
     target_total_monthly: Annotated[float, Form()],
     soft_price_margin: Annotated[float, Form()],
     allow_shared_rooms: Annotated[bool, Form()] = False,
+    review_hard_income_requirements: Annotated[bool, Form()] = False,
+    max_required_monthly_income: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
     record = db.get(SearchConfig, 1)
     assert record is not None
     current = Criteria.model_validate(record.config)
+    try:
+        income_limit = (
+            Decimal(max_required_monthly_income.replace(",", ".").strip())
+            if max_required_monthly_income.strip()
+            else None
+        )
+    except InvalidOperation as exc:
+        raise HTTPException(status_code=422, detail="invalid income limit") from exc
     updated = current.model_copy(
         update={
             "accepted_cities": [item.strip() for item in accepted_cities.split(",") if item.strip()],
@@ -274,6 +285,8 @@ def update_criteria(
             "target_total_monthly": target_total_monthly,
             "soft_price_margin": soft_price_margin,
             "allow_shared_rooms": allow_shared_rooms,
+            "review_hard_income_requirements": review_hard_income_requirements,
+            "max_required_monthly_income": income_limit,
         }
     )
     record.config = updated.model_dump(mode="json")

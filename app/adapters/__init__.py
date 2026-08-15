@@ -1,4 +1,5 @@
 from app.adapters.base import BrowserSourceAdapter, SourceAdapter
+from app.adapters.bulten import BultenVastgoedAdapter
 from app.adapters.campus_groningen import CampusGroningenAdapter
 from app.adapters.funda import FundaRentalAdapter
 from app.adapters.gruno import GrunoVastgoedAdapter
@@ -11,6 +12,7 @@ from app.adapters.rotsvast import RotsvastGroningenAdapter
 from app.adapters.woldring import WoldringAdapter
 
 ALL_ADAPTERS: tuple[type[SourceAdapter], ...] = (
+    BultenVastgoedAdapter,
     OneTwoThreeWonenAdapter,
     WoldringAdapter,
     HuurwoningenAdapter,
@@ -26,6 +28,7 @@ ALL_ADAPTERS: tuple[type[SourceAdapter], ...] = (
 __all__ = [
     "ALL_ADAPTERS",
     "BrowserSourceAdapter",
+    "BultenVastgoedAdapter",
     "CampusGroningenAdapter",
     "FundaRentalAdapter",
     "GrunoVastgoedAdapter",
