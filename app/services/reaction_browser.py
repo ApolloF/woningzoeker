@@ -7,6 +7,7 @@ from playwright.sync_api import Page
 from app.services.reaction_browser_base import (
     REACTION_SPECS,
     BrowserReactionResult,
+    LoginCheckResult,
     ReactionSpec,
 )
 from app.services.reaction_browser_base import ReactionBrowser as BaseReactionBrowser
@@ -51,6 +52,7 @@ class ReactionBrowser(BaseReactionBrowser):
 __all__ = [
     "REACTION_SPECS",
     "BrowserReactionResult",
+    "LoginCheckResult",
     "ReactionBrowser",
     "ReactionSpec",
 ]

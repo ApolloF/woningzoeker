@@ -30,6 +30,21 @@ from app.services.audit import add_audit
 reaction_service = pipeline.reaction_service
 ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
 SESSION_SOURCES = {"huurwoningen", "pararius"}
+LOGIN_CHECK_SOURCES = {"huurwoningen", "pararius", "woldring"}
+SOURCE_MODE_LABELS = {
+    SourceMode.MONITOR_ONLY.value: "Alleen volgen",
+    SourceMode.DRAFT_ONLY.value: "Concept maken",
+    SourceMode.AUTO_REACT.value: "Automatisch reageren",
+}
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker() -> Response:
+    return FileResponse(
+        Path("app/static/sw.js"),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 # Replace legacy implementations that cannot expose reaction/assistance state.
 app.router.routes[:] = [
@@ -78,6 +93,19 @@ def dashboard(request: Request, db: Annotated[Session, Depends(get_db)]) -> Resp
         .select_from(AssistanceRequest)
         .where(AssistanceRequest.state == AssistanceState.OPEN.value)
     )
+    submission_counts = dict(
+        db.execute(select(Submission.state, func.count()).group_by(Submission.state)).all()
+    )
+    submission_states = dict(
+        db.execute(select(Submission.canonical_property_id, Submission.state)).all()
+    )
+    recent_submissions = db.execute(
+        select(Submission, Listing, SourceConfig)
+        .join(Listing, Listing.id == Submission.listing_id)
+        .join(SourceConfig, SourceConfig.id == Listing.source_id)
+        .order_by(desc(Submission.updated_at))
+        .limit(12)
+    ).all()
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -92,6 +120,10 @@ def dashboard(request: Request, db: Annotated[Session, Depends(get_db)]) -> Resp
             archived_count=archived_count or 0,
             readiness=reaction_service.readiness(),
             telegram_configured=bool(settings.telegram_bot_token and settings.telegram_chat_id),
+            submission_counts=submission_counts,
+            submission_states=submission_states,
+            recent_submissions=recent_submissions,
+            source_mode_labels=SOURCE_MODE_LABELS,
         ),
     )
 
@@ -312,8 +344,10 @@ def settings_page(request: Request, db: Annotated[Session, Depends(get_db)]) -> 
             credential_statuses=reaction_service.credential_statuses(),
             account_sources=ACCOUNT_SOURCES,
             session_sources=SESSION_SOURCES,
+            login_check_sources=LOGIN_CHECK_SOURCES,
             sources=sources,
             source_modes=[mode.value for mode in SourceMode],
+            source_mode_labels=SOURCE_MODE_LABELS,
             readiness=reaction_service.readiness(),
         ),
     )
@@ -463,6 +497,58 @@ def update_source_mode(
     add_audit(db, "SOURCE_MODE_UPDATED", f"{source.display_name}: modus gewijzigd naar {mode}")
     db.commit()
     return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/sources/modes")
+def update_source_modes(
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    source_id: Annotated[list[int], Form()],
+    mode: Annotated[list[str], Form()],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    if len(source_id) != len(mode) or len(source_id) != len(set(source_id)):
+        raise HTTPException(status_code=400, detail="invalid source mode selection")
+    allowed = set(SOURCE_MODE_LABELS)
+    if any(item not in allowed for item in mode):
+        raise HTTPException(status_code=400, detail="invalid source mode")
+    sources = db.scalars(select(SourceConfig).where(SourceConfig.id.in_(source_id))).all()
+    if len(sources) != len(source_id):
+        raise HTTPException(status_code=404, detail="source not found")
+    selected = dict(zip(source_id, mode, strict=True))
+    changes = 0
+    for source in sources:
+        new_mode = selected[source.id]
+        if source.mode == new_mode:
+            continue
+        source.mode = new_mode
+        changes += 1
+    add_audit(
+        db,
+        "SOURCE_MODES_UPDATED",
+        f"Bronmodi in één keer opgeslagen: {changes} wijziging(en)",
+        data={"changes": changes},
+    )
+    db.commit()
+    return RedirectResponse("/settings#bronbeheer", status_code=303)
+
+
+@app.post("/sources/{source_id}/check-login")
+def check_source_login(
+    source_id: int,
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    source = db.get(SourceConfig, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="source not found")
+    if source.name not in LOGIN_CHECK_SOURCES:
+        raise HTTPException(status_code=400, detail="login check is not supported")
+    reaction_service.verify_credential(source.name)
+    return RedirectResponse("/settings#bronbeheer", status_code=303)
 
 
 __all__ = ["app"]

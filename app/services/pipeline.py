@@ -42,7 +42,10 @@ class Pipeline(BasePipeline):
 
     def _process_listing(self, source_name: str, normalized: NormalizedListing) -> dict[str, bool]:
         outcome = super()._process_listing(source_name, normalized)
-        if not outcome["created"] or self.settings.llm_provider == "disabled":
+        if (
+            not outcome["created"]
+            and not outcome.get("became_auto_react", False)
+        ) or self.settings.llm_provider == "disabled":
             return outcome
         with SessionLocal() as db:
             listing = db.scalar(

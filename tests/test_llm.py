@@ -114,3 +114,32 @@ def test_llm_can_only_downgrade_auto_react() -> None:
     assert decision is Decision.REVIEW
     assert rules[-1].rule == "llm_analysis"
     assert "Handmatige controle" in summary
+
+
+def test_cached_llm_review_cannot_flip_to_auto_react() -> None:
+    decision, rules, summary = Pipeline._apply_cached_llm_safety(
+        Decision.AUTO_REACT,
+        [RuleResult(rule="base", outcome="pass", detail="ok")],
+        "Deterministisch passend.",
+        {
+            "provider": "openai",
+            "error": None,
+            "needs_review": True,
+            "explanation": "De advertentie bevat een onduidelijke voorwaarde.",
+            "unusual_requirements": [],
+        },
+    )
+    assert decision is Decision.REVIEW
+    assert rules[-1].outcome == "review"
+    assert "opgeslagen" in summary.lower()
+
+
+def test_missing_cached_llm_result_fails_closed() -> None:
+    decision, rules, _ = Pipeline._apply_cached_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Deterministisch passend.",
+        None,
+    )
+    assert decision is Decision.REVIEW
+    assert rules[-1].rule == "llm_analysis"

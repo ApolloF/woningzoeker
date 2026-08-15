@@ -1,0 +1,27 @@
+{
+  "name": "Woningzoeker",
+  "short_name": "Woningen",
+  "description": "Persoonlijke woningagent voor nieuw huuraanbod en veilige reacties.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f3ec",
+  "theme_color": "#143b2e",
+  "lang": "nl",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

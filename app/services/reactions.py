@@ -24,7 +24,7 @@ from app.models import (
 from app.schemas import PrivateContactData, SourceCredentialData
 from app.services.audit import add_audit
 from app.services.crypto import CredentialCipher
-from app.services.reaction_browser import BrowserReactionResult, ReactionBrowser
+from app.services.reaction_browser import BrowserReactionResult, LoginCheckResult, ReactionBrowser
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +183,73 @@ class ReactionService:
                     "last_error": record.last_error,
                 }
         return statuses
+
+    def verify_credential(self, source_name: str) -> dict[str, Any]:
+        with SessionLocal() as db:
+            source = db.scalar(select(SourceConfig).where(SourceConfig.name == source_name))
+            if source is None:
+                raise ValueError("unknown source")
+            record = db.scalar(
+                select(Credential).where(
+                    Credential.source_id == source.id,
+                    Credential.label == "default",
+                )
+            )
+            if record is None:
+                return {
+                    "ok": False,
+                    "code": "CREDENTIALS_MISSING",
+                    "summary": "Inloggegevens ontbreken.",
+                }
+            try:
+                credential = SourceCredentialData.model_validate(
+                    self._cipher().decrypt(record.encrypted_payload)
+                )
+            except (ValueError, ValidationError):
+                record.last_error = "De opgeslagen inloggegevens konden niet worden gelezen."
+                db.commit()
+                return {
+                    "ok": False,
+                    "code": "CREDENTIALS_INVALID",
+                    "summary": record.last_error,
+                }
+            credential_id = record.id
+            source_id = source.id
+            display_name = source.display_name
+
+        try:
+            result = self.browser.check_login(source_name, credential)
+        except Exception as exc:
+            logger.exception(
+                "credential check failed",
+                extra={"context": {"source": source_name}},
+            )
+            result = LoginCheckResult(
+                False,
+                "LOGIN_CHECK_ERROR",
+                f"Inlogcontrole mislukt: {type(exc).__name__}",
+            )
+        with SessionLocal() as db:
+            record = db.get(Credential, credential_id)
+            if record is not None:
+                if result.storage_state:
+                    updated = credential.model_copy(update={"storage_state": result.storage_state})
+                    record.encrypted_payload = self._cipher().encrypt(updated.model_dump(mode="json"))
+                record.last_verified_at = datetime.now(UTC) if result.ok else None
+                record.last_error = None if result.ok else result.summary[:500]
+            add_audit(
+                db,
+                "CREDENTIAL_CHECKED",
+                f"{display_name}: {'inloggen werkt' if result.ok else result.summary}",
+                source_id=source_id,
+                data={"ok": result.ok, "code": result.code},
+            )
+            db.commit()
+        return {
+            "ok": result.ok,
+            "code": result.code,
+            "summary": result.summary,
+        }
 
     def contact_is_configured(self) -> bool:
         with SessionLocal() as db:

@@ -84,6 +84,14 @@ class BrowserReactionResult:
     storage_state: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class LoginCheckResult:
+    ok: bool
+    code: str
+    summary: str
+    storage_state: dict[str, Any] | None = None
+
+
 class ReactionBrowser:
     """Conservative browser automation: fill known fields and stop on ambiguity."""
 
@@ -95,6 +103,65 @@ class ReactionBrowser:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+
+    def check_login(
+        self,
+        source_name: str,
+        credential: SourceCredentialData | None,
+    ) -> LoginCheckResult:
+        """Verify an account session without opening or submitting a reaction form."""
+        spec = REACTION_SPECS.get(source_name)
+        if spec is None or not spec.account_required or not spec.login_url:
+            return LoginCheckResult(
+                False,
+                "LOGIN_CHECK_UNSUPPORTED",
+                "Deze bron heeft geen veilige automatische inlogcontrole.",
+            )
+        if credential is None:
+            return LoginCheckResult(False, "CREDENTIALS_MISSING", "Inloggegevens ontbreken.")
+
+        with sync_playwright() as playwright:
+            launch_args: dict[str, Any] = {"headless": True}
+            if self.settings.chromium_executable_path:
+                launch_args["executable_path"] = self.settings.chromium_executable_path
+            browser = playwright.chromium.launch(**launch_args)
+            context_args: dict[str, Any] = {}
+            if credential.storage_state:
+                context_args["storage_state"] = credential.storage_state
+            context = browser.new_context(**context_args)
+            context.set_default_timeout(self.settings.reaction_browser_timeout_seconds * 1000)
+            page = context.new_page()
+            try:
+                failure = self._ensure_login(
+                    page,
+                    context,
+                    spec,
+                    spec.login_url,
+                    credential,
+                    source_name,
+                )
+                if failure is not None:
+                    return LoginCheckResult(
+                        False,
+                        failure.code,
+                        failure.summary,
+                        failure.storage_state,
+                    )
+                return LoginCheckResult(
+                    True,
+                    "LOGIN_OK",
+                    "Inloggen en sessie gecontroleerd.",
+                    dict(context.storage_state()),
+                )
+            except TimeoutError:
+                return LoginCheckResult(
+                    False,
+                    "BROWSER_TIMEOUT",
+                    "De inlogpagina reageerde niet binnen de tijdslimiet.",
+                )
+            finally:
+                context.close()
+                browser.close()
 
     def react(
         self,

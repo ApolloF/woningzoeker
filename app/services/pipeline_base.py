@@ -45,13 +45,8 @@ class Pipeline:
             adapter_type = ADAPTERS.get(source_name)
             if not adapter_type:
                 raise ValueError(f"no adapter registered: {source_name}")
+            previous_failures = source.consecutive_failures
             source.last_started_at = datetime.now(UTC)
-            add_audit(
-                db,
-                "SOURCE_RUN_STARTED",
-                f"Fetch gestart voor {source.display_name}",
-                source_id=source.id,
-            )
             db.commit()
 
         try:
@@ -93,13 +88,18 @@ class Pipeline:
             source.last_error = None
             source.last_item_count = len(discovered)
             source.consecutive_failures = 0
-            add_audit(
-                db,
-                "SOURCE_RUN_COMPLETED",
-                f"{source.display_name}: {len(discovered)} advertenties verwerkt",
-                source_id=source.id,
-                data={"created": created, "updated": updated, "item_errors": item_errors},
-            )
+            if created or item_errors or previous_failures:
+                add_audit(
+                    db,
+                    (
+                        "SOURCE_RUN_RECOVERED"
+                        if previous_failures and not item_errors
+                        else "SOURCE_RUN_COMPLETED"
+                    ),
+                    f"{source.display_name}: {len(discovered)} advertenties verwerkt",
+                    source_id=source.id,
+                    data={"created": created, "updated": updated, "item_errors": item_errors},
+                )
             db.commit()
         return {
             "source": source_name,
@@ -126,6 +126,9 @@ class Pipeline:
                 )
             )
             created = existing is None
+            previous_decision = existing.decision if existing else None
+            previous_available = existing.is_available if existing else None
+            old_raw = existing.raw_data if existing and isinstance(existing.raw_data, dict) else {}
             canonical = find_or_create_canonical(db, normalized)
             evaluation = self.rule_engine.evaluate(normalized, criteria)
             decision = evaluation.decision
@@ -137,9 +140,25 @@ class Pipeline:
 
             if decision is not Decision.IGNORE:
                 deterministic_draft = self.response_provider.generate(normalized, profile)
-                old_raw = existing.raw_data if existing and isinstance(existing.raw_data, dict) else {}
-                if existing and existing.response_draft and old_raw.get("_content_hash") == content_hash:
+                can_reuse_draft = bool(
+                    existing
+                    and existing.response_draft
+                    and old_raw.get("_content_hash") == content_hash
+                    and (
+                        not self.llm_service.enabled
+                        or isinstance(old_raw.get("_llm"), dict)
+                    )
+                )
+                if can_reuse_draft:
+                    assert existing is not None and existing.response_draft is not None
                     draft = existing.response_draft
+                    if self.llm_service.enabled:
+                        decision, rule_results, summary = self._apply_cached_llm_safety(
+                            decision,
+                            rule_results,
+                            summary,
+                            old_raw.get("_llm"),
+                        )
                 else:
                     llm_run = self.llm_service.generate(normalized, profile, deterministic_draft)
                     draft = llm_run.draft
@@ -167,39 +186,49 @@ class Pipeline:
             listing.reasoning_summary = summary
             listing.response_draft = draft
             listing.last_seen_at = datetime.now(UTC)
-            listing.raw_data = {**listing.raw_data, "_content_hash": content_hash}
-            if llm_run:
-                listing.raw_data = {
-                    **listing.raw_data,
-                    "_llm": {
+            internal_data: dict[str, Any] = {
+                "_content_hash": content_hash,
+            }
+            if isinstance(old_raw.get("_llm"), dict):
+                internal_data["_llm"] = old_raw["_llm"]
+            if llm_run and self.llm_service.enabled:
+                internal_data["_llm"] = {
                         "provider": llm_run.provider,
                         "model": llm_run.model,
                         "error": llm_run.error,
                         "needs_review": llm_run.result.needs_review if llm_run.result else None,
+                        "explanation": llm_run.result.explanation if llm_run.result else None,
                         "unusual_requirements": (
                             llm_run.result.unusual_requirements if llm_run.result else []
                         ),
-                    },
                 }
+            listing.raw_data = {**normalized.raw_data, **internal_data}
             if created:
                 db.add(listing)
             db.flush()
-            add_audit(
-                db,
-                "LISTING_DISCOVERED" if created else "LISTING_REFRESHED",
-                f"{listing.title}: {listing.decision} ({listing.match_score}/100)",
-                listing_id=listing.id,
-                source_id=source.id,
-                data={
-                    "decision": listing.decision,
-                    "score": listing.match_score,
-                    "canonical_property_id": canonical.id,
-                    "draft_created": bool(draft),
-                    "llm_provider": llm_run.provider if llm_run else "cached-or-disabled",
-                    "llm_model": llm_run.model if llm_run else None,
-                    "llm_error": bool(llm_run and llm_run.error),
-                },
+            materially_changed = (
+                created
+                or old_raw.get("_content_hash") != content_hash
+                or previous_decision != listing.decision
+                or previous_available != listing.is_available
             )
+            if materially_changed:
+                add_audit(
+                    db,
+                    "LISTING_DISCOVERED" if created else "LISTING_CHANGED",
+                    f"{listing.title}: {listing.decision} ({listing.match_score}/100)",
+                    listing_id=listing.id,
+                    source_id=source.id,
+                    data={
+                        "decision": listing.decision,
+                        "score": listing.match_score,
+                        "canonical_property_id": canonical.id,
+                        "draft_created": bool(draft),
+                        "llm_provider": llm_run.provider if llm_run else "cached-or-disabled",
+                        "llm_model": llm_run.model if llm_run else None,
+                        "llm_error": bool(llm_run and llm_run.error),
+                    },
+                )
             db.commit()
 
             notification_sent = False
@@ -217,7 +246,62 @@ class Pipeline:
                     data=result,
                 )
                 db.commit()
-            return {"created": created, "notified": notification_sent}
+            return {
+                "created": created,
+                "notified": notification_sent,
+                "became_auto_react": (
+                    listing.decision == Decision.AUTO_REACT.value
+                    and previous_decision != Decision.AUTO_REACT.value
+                ),
+            }
+
+    @staticmethod
+    def _apply_cached_llm_safety(
+        decision: Decision,
+        rules: list[RuleResult],
+        summary: str,
+        raw_meta: object,
+    ) -> tuple[Decision, list[RuleResult], str]:
+        if not isinstance(raw_meta, dict):
+            if decision is Decision.AUTO_REACT:
+                decision = Decision.REVIEW
+            rules.append(
+                RuleResult(
+                    rule="llm_analysis",
+                    outcome="review",
+                    detail="Eerdere AI-veiligheidscontrole ontbreekt; opnieuw beoordelen vereist.",
+                )
+            )
+            return decision, rules, f"{summary} Eerdere AI-controle ontbreekt."
+
+        unusual = raw_meta.get("unusual_requirements")
+        unusual_requirements = unusual if isinstance(unusual, list) else []
+        needs_review = (
+            bool(raw_meta.get("error"))
+            or raw_meta.get("needs_review") is not False
+            or bool(unusual_requirements)
+        )
+        explanation = raw_meta.get("explanation")
+        detail = (
+            str(explanation)
+            if explanation
+            else (
+                "De opgeslagen AI-controle vereist handmatige beoordeling."
+                if needs_review
+                else "De opgeslagen AI-controle bevat geen tekstuele blokkade."
+            )
+        )
+        rules.append(
+            RuleResult(
+                rule="llm_analysis",
+                outcome="review" if needs_review else "pass",
+                detail=detail,
+            )
+        )
+        if needs_review and decision is Decision.AUTO_REACT:
+            decision = Decision.REVIEW
+        suffix = "Handmatige controle vereist." if needs_review else "Geen tekstuele blokkade gevonden."
+        return decision, rules, f"{summary} AI (opgeslagen): {detail} {suffix}"
 
     @staticmethod
     def _apply_llm_safety(

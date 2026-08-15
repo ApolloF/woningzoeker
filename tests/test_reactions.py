@@ -12,6 +12,7 @@ from app.config import Settings
 from app.db import Base
 from app.models import (
     CanonicalProperty,
+    Credential,
     Decision,
     Listing,
     PrivateContact,
@@ -22,7 +23,12 @@ from app.models import (
 )
 from app.schemas import PrivateContactData
 from app.services.crypto import CredentialCipher
-from app.services.reaction_browser import REACTION_SPECS, BrowserReactionResult, ReactionBrowser
+from app.services.reaction_browser import (
+    REACTION_SPECS,
+    BrowserReactionResult,
+    LoginCheckResult,
+    ReactionBrowser,
+)
 from app.services.reactions import ReactionService
 
 
@@ -38,6 +44,14 @@ class FakeBrowser:
             summary="sent",
             field_names=["email", "message"],
             browser_result={"submitted": True},
+        )
+
+    def check_login(self, source_name: str, credential: Any) -> LoginCheckResult:
+        return LoginCheckResult(
+            True,
+            "LOGIN_OK",
+            f"{source_name} login werkt",
+            credential.storage_state,
         )
 
 
@@ -148,3 +162,34 @@ def test_sent_submission_blocks_duplicate_canonical_reaction(monkeypatch: Any) -
         assert len(submissions) == 1
         assert submissions[0].submitted_fields == {"field_names": ["email", "message"]}
         assert "florian@example.test" not in str(submissions[0].submitted_fields)
+
+
+def test_login_check_persists_verified_status(monkeypatch: Any) -> None:
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    testing_session = sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(reactions_module, "SessionLocal", testing_session)
+    key = Fernet.generate_key().decode()
+    settings = Settings(_env_file=None, master_encryption_key=key)
+    with testing_session() as db:
+        source = SourceConfig(
+            name="woldring",
+            display_name="Woldring",
+            base_url="https://example.test",
+        )
+        db.add(source)
+        db.flush()
+        encrypted = CredentialCipher(key).encrypt(
+            {"username": "user@example.test", "password": "secret", "storage_state": None}
+        )
+        db.add(Credential(source_id=source.id, label="default", encrypted_payload=encrypted))
+        db.commit()
+
+    service = ReactionService(settings, browser=FakeBrowser())  # type: ignore[arg-type]
+    result = service.verify_credential("woldring")
+    assert result["ok"] is True
+    with testing_session() as db:
+        credential = db.scalar(select(Credential))
+        assert credential is not None
+        assert credential.last_verified_at is not None
+        assert credential.last_error is None
