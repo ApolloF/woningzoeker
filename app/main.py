@@ -46,6 +46,7 @@ def service_worker() -> Response:
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 
+
 # Replace legacy implementations that cannot expose reaction/assistance state.
 app.router.routes[:] = [
     route
@@ -96,9 +97,7 @@ def dashboard(request: Request, db: Annotated[Session, Depends(get_db)]) -> Resp
     submission_counts = dict(
         db.execute(select(Submission.state, func.count()).group_by(Submission.state)).all()
     )
-    submission_states = dict(
-        db.execute(select(Submission.canonical_property_id, Submission.state)).all()
-    )
+    submission_states = dict(db.execute(select(Submission.canonical_property_id, Submission.state)).all())
     recent_submissions = db.execute(
         select(Submission, Listing, SourceConfig)
         .join(Listing, Listing.id == Submission.listing_id)
@@ -149,6 +148,17 @@ def archive_stale_listings(
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/admin/reactions/run-eligible")
+def run_eligible_reactions(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    csrf_token: Annotated[str, Form()],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    background_tasks.add_task(pipeline.dispatch_pending_auto_reactions)
+    return RedirectResponse("/#reacties", status_code=303)
+
+
 @app.post("/admin/listings/restore-archived")
 def restore_archived_listings(
     request: Request,
@@ -165,9 +175,7 @@ def restore_archived_listings(
 
 
 @app.get("/listings/{listing_id}", response_class=HTMLResponse)
-def listing_detail(
-    listing_id: int, request: Request, db: Annotated[Session, Depends(get_db)]
-) -> Response:
+def listing_detail(listing_id: int, request: Request, db: Annotated[Session, Depends(get_db)]) -> Response:
     auth.require_session(request)
     listing = db.scalar(
         select(Listing)
@@ -183,14 +191,10 @@ def listing_detail(
         .order_by(Listing.first_seen_at)
     ).all()
     events = db.scalars(
-        select(AuditEvent)
-        .where(AuditEvent.listing_id == listing_id)
-        .order_by(desc(AuditEvent.created_at))
+        select(AuditEvent).where(AuditEvent.listing_id == listing_id).order_by(desc(AuditEvent.created_at))
     ).all()
     submission = db.scalar(
-        select(Submission).where(
-            Submission.canonical_property_id == listing.canonical_property_id
-        )
+        select(Submission).where(Submission.canonical_property_id == listing.canonical_property_id)
     )
     assistance = None
     if submission:
@@ -372,6 +376,12 @@ def update_applicant_profile(
     lifestyle: Annotated[str, Form()],
     desired_tenure: Annotated[str, Form()],
     standard_message: Annotated[str, Form()] = "",
+    sender_name: Annotated[str, Form()] = "Florian",
+    message_perspective: Annotated[str, Form()] = "sender",
+    message_rewrite_mode: Annotated[str, Form()] = "exact",
+    always_include_financial: Annotated[bool, Form()] = False,
+    always_include_guarantor: Annotated[bool, Form()] = False,
+    required_message_points: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
@@ -388,6 +398,14 @@ def update_applicant_profile(
         lifestyle=[item.strip() for item in lifestyle.splitlines() if item.strip()],
         desired_tenure=desired_tenure.strip(),
         standard_message=standard_message.strip(),
+        sender_name=sender_name.strip(),
+        message_perspective=message_perspective,
+        message_rewrite_mode=message_rewrite_mode,
+        always_include_financial=always_include_financial,
+        always_include_guarantor=always_include_guarantor,
+        required_message_points=[
+            item.strip() for item in required_message_points.splitlines() if item.strip()
+        ],
     )
     record.profile = profile.model_dump(mode="json")
     add_audit(db, "APPLICANT_PROFILE_UPDATED", "Aanvragersprofiel bijgewerkt")

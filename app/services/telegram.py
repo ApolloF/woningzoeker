@@ -8,7 +8,8 @@ import httpx
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import Settings
-from app.models import Listing, SourceConfig
+from app.models import Decision, Listing, SourceConfig
+from app.schemas import Criteria
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,11 @@ class TelegramNotifier:
     def configured(self) -> bool:
         return bool(self.settings.telegram_bot_token and self.settings.telegram_chat_id)
 
-    def notify_listing(self, listing: Listing, source: SourceConfig) -> dict[str, Any]:
+    def notify_listing(self, listing: Listing, source: SourceConfig, criteria: Criteria) -> dict[str, Any]:
         if not self.configured:
             return {"sent": False, "reason": "telegram_not_configured"}
+        if not self._listing_matches_filter(listing, criteria):
+            return {"sent": False, "reason": "listing_filter"}
         total = f"EUR {listing.rent_total}" if listing.rent_total is not None else "onbekend"
         area = f"{listing.area_m2} m2" if listing.area_m2 is not None else "onbekend"
         dashboard_url = f"{self.settings.public_base_url.rstrip('/')}/listings/{listing.id}"
@@ -34,7 +37,8 @@ class TelegramNotifier:
             f"Oppervlakte: {html.escape(area)}\n"
             f"Bron: {html.escape(source.display_name)}\n"
             f"Score/besluit: {listing.match_score}/100 - {listing.decision}\n"
-            f"Eerste detectie: {listing.first_seen_at.isoformat()}\n"
+            f"{'Geplaatst' if listing.published_at else 'Eerste detectie'}: "
+            f"{(listing.published_at or listing.first_seen_at).isoformat()}\n"
             f"Reactie verzonden: {'ja' if listing.response_sent else 'nee'}"
         )
         return self._deliver(
@@ -42,6 +46,33 @@ class TelegramNotifier:
             [
                 {"text": "Open listing", "url": listing.url},
                 {"text": "Open dashboard", "url": dashboard_url},
+            ],
+            listing_id=listing.id,
+        )
+
+    @staticmethod
+    def _listing_matches_filter(listing: Listing, criteria: Criteria) -> bool:
+        mode = criteria.telegram_listing_filter
+        auto = listing.decision == Decision.AUTO_REACT.value
+        score = listing.match_score >= criteria.telegram_min_score
+        return {
+            "all": True,
+            "auto_react": auto,
+            "score": score,
+            "auto_react_or_score": auto or score,
+            "off": False,
+        }[mode]
+
+    def notify_reaction_sent(self, listing: Listing, source: SourceConfig) -> dict[str, Any]:
+        if not self.configured:
+            return {"sent": False, "reason": "telegram_not_configured"}
+        dashboard_url = f"{self.settings.public_base_url.rstrip('/')}/listings/{listing.id}"
+        return self._deliver(
+            f"<b>Automatisch gereageerd</b>\n{html.escape(listing.title)}\n"
+            f"Bron: {html.escape(source.display_name)}\nScore: {listing.match_score}/100",
+            [
+                {"text": "Open advertentie", "url": listing.url},
+                {"text": "Bekijk reactie", "url": dashboard_url},
             ],
             listing_id=listing.id,
         )

@@ -144,10 +144,7 @@ class Pipeline:
                     existing
                     and existing.response_draft
                     and old_raw.get("_content_hash") == content_hash
-                    and (
-                        not self.llm_service.enabled
-                        or isinstance(old_raw.get("_llm"), dict)
-                    )
+                    and (not self.llm_service.enabled or isinstance(old_raw.get("_llm"), dict))
                 )
                 if can_reuse_draft:
                     assert existing is not None and existing.response_draft is not None
@@ -193,14 +190,12 @@ class Pipeline:
                 internal_data["_llm"] = old_raw["_llm"]
             if llm_run and self.llm_service.enabled:
                 internal_data["_llm"] = {
-                        "provider": llm_run.provider,
-                        "model": llm_run.model,
-                        "error": llm_run.error,
-                        "needs_review": llm_run.result.needs_review if llm_run.result else None,
-                        "explanation": llm_run.result.explanation if llm_run.result else None,
-                        "unusual_requirements": (
-                            llm_run.result.unusual_requirements if llm_run.result else []
-                        ),
+                    "provider": llm_run.provider,
+                    "model": llm_run.model,
+                    "error": llm_run.error,
+                    "needs_review": llm_run.result.needs_review if llm_run.result else None,
+                    "explanation": llm_run.result.explanation if llm_run.result else None,
+                    "unusual_requirements": (llm_run.result.unusual_requirements if llm_run.result else []),
                 }
             listing.raw_data = {**normalized.raw_data, **internal_data}
             if created:
@@ -233,14 +228,19 @@ class Pipeline:
 
             notification_sent = False
             if created and listing.decision != Decision.IGNORE.value:
-                result = self.notifier.notify_listing(listing, source)
+                result = self.notifier.notify_listing(listing, source, criteria)
                 notification_sent = bool(result.get("sent"))
+                skipped_reason = result.get("reason")
                 add_audit(
                     db,
                     "TELEGRAM_SENT" if notification_sent else "TELEGRAM_SKIPPED",
                     "Telegram-notificatie verzonden"
                     if notification_sent
-                    else "Telegram niet geconfigureerd; notificatie overgeslagen",
+                    else (
+                        "Telegram-filter heeft deze advertentie overgeslagen"
+                        if skipped_reason == "listing_filter"
+                        else "Telegram niet beschikbaar; notificatie overgeslagen"
+                    ),
                     listing_id=listing.id,
                     source_id=source.id,
                     data=result,
@@ -354,6 +354,7 @@ class Pipeline:
             "rooms": listing.rooms,
             "description": listing.description,
             "availability": listing.availability_text,
+            "published_at": listing.published_at.isoformat() if listing.published_at else None,
             "is_available": listing.is_available,
             "profile_fingerprint": profile_fingerprint,
         }
@@ -378,6 +379,8 @@ class Pipeline:
         listing.availability_text = normalized.availability_text
         listing.is_available = normalized.is_available
         listing.image_url = str(normalized.image_url) if normalized.image_url else None
+        if normalized.published_at is not None:
+            listing.published_at = normalized.published_at
         listing.raw_data = normalized.raw_data
 
     @staticmethod

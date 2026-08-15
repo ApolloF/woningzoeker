@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
@@ -27,6 +28,7 @@ class NormalizedListing(BaseModel):
     availability_text: str | None = None
     is_available: bool = True
     image_url: HttpUrl | None = None
+    published_at: datetime | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("rent_total", mode="after")
@@ -60,6 +62,14 @@ class Criteria(BaseModel):
     suitable_for_two_required: bool = True
     review_hard_income_requirements: bool = True
     max_required_monthly_income: Decimal | None = Field(default=None, ge=0)
+    max_listing_age_minutes: int | None = Field(default=180, ge=5, le=10080)
+    telegram_listing_filter: Literal["all", "auto_react", "score", "auto_react_or_score", "off"] = (
+        "auto_react_or_score"
+    )
+    telegram_min_score: int = Field(default=75, ge=0, le=100)
+    telegram_notify_assistance: bool = True
+    telegram_notify_source_failures: bool = True
+    telegram_notify_sent_reactions: bool = True
 
 
 class RuleResult(BaseModel):
@@ -86,6 +96,12 @@ class ApplicantProfileData(BaseModel):
     lifestyle: list[str]
     desired_tenure: str
     standard_message: str = Field(default="", max_length=1800)
+    sender_name: str = Field(default="Florian", min_length=1, max_length=100)
+    message_perspective: Literal["sender", "joint"] = "sender"
+    message_rewrite_mode: Literal["exact", "light", "adaptive"] = "exact"
+    always_include_financial: bool = True
+    always_include_guarantor: bool = True
+    required_message_points: list[str] = Field(default_factory=list, max_length=12)
 
 
 class PrivateContactData(BaseModel):

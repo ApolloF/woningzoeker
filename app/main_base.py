@@ -264,6 +264,12 @@ def update_criteria(
     allow_shared_rooms: Annotated[bool, Form()] = False,
     review_hard_income_requirements: Annotated[bool, Form()] = False,
     max_required_monthly_income: Annotated[str, Form()] = "",
+    max_listing_age_minutes: Annotated[str, Form()] = "180",
+    telegram_listing_filter: Annotated[str, Form()] = "auto_react_or_score",
+    telegram_min_score: Annotated[int, Form()] = 75,
+    telegram_notify_assistance: Annotated[bool, Form()] = False,
+    telegram_notify_source_failures: Annotated[bool, Form()] = False,
+    telegram_notify_sent_reactions: Annotated[bool, Form()] = False,
     db: Session = Depends(get_db),
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
@@ -287,8 +293,17 @@ def update_criteria(
             "allow_shared_rooms": allow_shared_rooms,
             "review_hard_income_requirements": review_hard_income_requirements,
             "max_required_monthly_income": income_limit,
+            "max_listing_age_minutes": (
+                int(max_listing_age_minutes) if max_listing_age_minutes.strip() else None
+            ),
+            "telegram_listing_filter": telegram_listing_filter,
+            "telegram_min_score": telegram_min_score,
+            "telegram_notify_assistance": telegram_notify_assistance,
+            "telegram_notify_source_failures": telegram_notify_source_failures,
+            "telegram_notify_sent_reactions": telegram_notify_sent_reactions,
         }
     )
+    updated = Criteria.model_validate(updated.model_dump())
     record.config = updated.model_dump(mode="json")
     add_audit(db, "CRITERIA_UPDATED", "Zoekcriteria bijgewerkt")
     db.commit()

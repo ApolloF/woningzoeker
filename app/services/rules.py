@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 from app.models import Decision
@@ -37,6 +38,23 @@ class RuleEngine:
 
         if not listing.is_available:
             return self._ignored("availability", "Listing is niet meer beschikbaar.")
+        if criteria.max_listing_age_minutes is not None and listing.published_at is not None:
+            published_at = listing.published_at
+            if published_at.tzinfo is None:
+                published_at = published_at.replace(tzinfo=UTC)
+            age_minutes = max(0, int((datetime.now(UTC) - published_at).total_seconds() // 60))
+            if age_minutes > criteria.max_listing_age_minutes:
+                return self._ignored(
+                    "listing_age",
+                    f"Advertentie is {age_minutes} minuten oud; grens is {criteria.max_listing_age_minutes}.",
+                )
+            rules.append(
+                RuleResult(
+                    rule="listing_age",
+                    outcome="pass",
+                    detail=f"Ongeveer {age_minutes} minuten oud",
+                )
+            )
         if criteria.suitable_for_two_required and self.ONE_PERSON_PATTERN.search(description):
             return self._ignored("household_size", "Advertentie staat expliciet slechts één persoon toe.")
         if not criteria.allow_home_swap and "woningruil" in description.lower():

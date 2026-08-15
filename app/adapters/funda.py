@@ -5,7 +5,13 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import BrowserSourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import (
+    BrowserSourceAdapter,
+    extract_published_at,
+    parse_decimal,
+    parse_int,
+    parse_nl_currency,
+)
 from app.schemas import NormalizedListing
 
 
@@ -63,6 +69,7 @@ class FundaRentalAdapter(BrowserSourceAdapter):
         property_type = slug.split("-", 1)[0] if "-" in slug else None
 
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=id_match.group(1),
             url=url,

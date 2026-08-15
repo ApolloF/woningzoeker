@@ -12,7 +12,8 @@ from sqlalchemy import select
 from app.assistance_models import AssistanceRequest, AssistanceState
 from app.config import Settings
 from app.db import SessionLocal
-from app.models import Decision, Listing, SourceConfig, Submission, SubmissionState
+from app.models import Decision, Listing, SearchConfig, SourceConfig, Submission, SubmissionState
+from app.schemas import Criteria
 from app.services.audit import add_audit
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,9 @@ class AssistanceService:
         if not (self.settings.telegram_bot_token and self.settings.telegram_chat_id):
             return False
         with SessionLocal() as db:
+            config = db.get(SearchConfig, 1)
+            if config is not None and not Criteria.model_validate(config.config).telegram_notify_assistance:
+                return False
             request = db.get(AssistanceRequest, assistance_id)
             if request is None:
                 return False

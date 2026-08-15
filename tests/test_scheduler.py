@@ -16,6 +16,9 @@ class FakePipeline:
     def retry_failed_reactions(self) -> list[dict[str, Any]]:
         return []
 
+    def dispatch_pending_auto_reactions(self) -> list[dict[str, Any]]:
+        return []
+
 
 def test_refresh_keeps_existing_schedule_and_staggers_sources(monkeypatch: Any) -> None:
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -41,9 +44,7 @@ def test_refresh_keeps_existing_schedule_and_staggers_sources(monkeypatch: Any) 
         assert len(set(first_times.values())) == 3
 
         source_scheduler.refresh_jobs()
-        second_times = {
-            job.id: job.next_run_time for job in source_scheduler.scheduler.get_jobs()
-        }
+        second_times = {job.id: job.next_run_time for job in source_scheduler.scheduler.get_jobs()}
         assert second_times == first_times
     finally:
         source_scheduler.shutdown()

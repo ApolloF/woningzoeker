@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
 from abc import ABC, abstractmethod
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 import httpx
+from bs4 import Tag
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -149,3 +153,55 @@ def parse_int(text: str | None) -> int | None:
         return None
     match = re.search(r"\d+", text)
     return int(match.group()) if match else None
+
+
+def extract_published_at(node: Tag) -> datetime | None:
+    """Extract explicitly labelled publication time, never an availability date."""
+    selectors = (
+        "time[itemprop='datePosted'],time[itemprop='datePublished'],"
+        "[data-published-at],[data-date-posted],"
+        "meta[itemprop='datePosted'],meta[itemprop='datePublished']"
+    )
+    for match in node.select(selectors):
+        value: Any = (
+            match.get("datetime")
+            or match.get("content")
+            or match.get("data-published-at")
+            or match.get("data-date-posted")
+        )
+        if not value:
+            continue
+        parsed = _parse_published_datetime(str(value))
+        if parsed is not None:
+            return parsed
+    for script in node.select("script[type='application/ld+json']"):
+        try:
+            payload = json.loads(script.string or script.get_text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for value in _published_values(payload):
+            parsed = _parse_published_datetime(value)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _published_values(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        direct = [str(value[key]) for key in ("datePosted", "datePublished") if value.get(key)]
+        return direct + [item for child in value.values() for item in _published_values(child)]
+    if isinstance(value, list):
+        return [item for child in value for item in _published_values(child)]
+    return []
+
+
+def _parse_published_datetime(value: str) -> datetime | None:
+    cleaned = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(cleaned)
+    except ValueError:
+        match = re.fullmatch(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", cleaned)
+        if not match:
+            return None
+        parsed = datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)))
+    return parsed.replace(tzinfo=parsed.tzinfo or UTC).astimezone(UTC)

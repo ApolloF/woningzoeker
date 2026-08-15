@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -58,6 +58,7 @@ class ParariusFamilyParser:
         external_id = path_parts[-2] if len(path_parts) >= 2 else path_parts[-1]
 
         return NormalizedListing(
+            published_at=extract_published_at(ancestor),
             source_name=self.source_name,
             external_id=external_id,
             url=url,

@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import SourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import SourceAdapter, extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -68,6 +68,7 @@ class BultenVastgoedAdapter(SourceAdapter):
         bedrooms = self._labelled_feature(card, "Slaapkamers", integer=True)
         rooms = self._labelled_feature(card, "Kamers", integer=True)
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=identifier.group(1),
             url=url,
@@ -122,6 +123,7 @@ class BultenVastgoedAdapter(SourceAdapter):
                 "bedrooms": parse_int(bedroom_text) if bedroom_text else listing.bedrooms,
                 "description": description or listing.description,
                 "image_url": urljoin(str(listing.url), raw_image) if raw_image else listing.image_url,
+                "published_at": extract_published_at(soup) or listing.published_at,
                 "availability_text": ("detail: reageren niet mogelijk" if closed else "detail: beschikbaar"),
                 "is_available": listing.is_available and not closed,
                 "raw_data": {**listing.raw_data, "detail_fields": details},

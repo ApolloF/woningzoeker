@@ -30,7 +30,9 @@ def test_draft_mentions_real_listing_characteristics() -> None:
     assert "37 m²" in draft
     assert "1 slaapkamer" in draft
     assert "Samenwonend." in draft
-    assert "Garantstellertekst" not in draft
+    assert "Garantstellertekst" in draft
+    assert "Mijn naam is Florian" in draft
+    assert draft.rstrip().endswith("Florian")
 
 
 def test_optional_standard_message_is_used_as_the_draft_base() -> None:
@@ -56,3 +58,4 @@ def test_optional_standard_message_is_used_as_the_draft_base() -> None:
     draft = DeterministicDutchResponseProvider().generate(listing, profile)
     assert "Wij zijn een rustig stel." in draft
     assert "Havenstraat" in draft
+    assert "Garant." in draft

@@ -4,7 +4,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import SourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import SourceAdapter, extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -46,6 +46,7 @@ class GrunoVastgoedAdapter(SourceAdapter):
         external_id = public_id or urlparse(url).path.strip("/")
         property_type = self._text(card.select_one(".obj_type_price + ul li, .object_data > ul li"))
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=external_id,
             url=url,

@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import SourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import SourceAdapter, extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -40,6 +40,7 @@ class RotsvastGroningenAdapter(SourceAdapter):
         external_id = external_match.group(1) if external_match else urlparse(url).path.strip("/")
         availability = self._parent_text(availability_node)
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=external_id,
             url=url,

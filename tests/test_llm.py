@@ -143,3 +143,14 @@ def test_missing_cached_llm_result_fails_closed() -> None:
     )
     assert decision is Decision.REVIEW
     assert rules[-1].rule == "llm_analysis"
+
+
+def test_exact_mode_keeps_own_draft_and_light_mode_enforces_guarantor() -> None:
+    own = "Mijn eigen bericht.\n\nEen garantsteller is altijd beschikbaar."
+    exact = profile().model_copy(update={"message_rewrite_mode": "exact"})
+    assert ListingLLMService._controlled_draft("Volledig herschreven.", own, exact) == own
+
+    light = profile().model_copy(update={"message_rewrite_mode": "light"})
+    controlled = ListingLLMService._controlled_draft("Licht aangepast.", own, light)
+    assert controlled.startswith("Licht aangepast.")
+    assert light.guarantor_wording in controlled

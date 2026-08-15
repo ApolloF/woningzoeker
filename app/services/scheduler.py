@@ -45,6 +45,18 @@ class SourceScheduler:
             next_run_time=now + timedelta(seconds=90),
             replace_existing=True,
         )
+        self.scheduler.add_job(
+            self.pipeline.dispatch_pending_auto_reactions,
+            "interval",
+            seconds=30,
+            id="system:dispatch-pending-reactions",
+            name="Nieuwe auto-react kandidaten direct uitvoeren",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=20,
+            next_run_time=now + timedelta(seconds=10),
+            replace_existing=True,
+        )
         self.scheduler.start()
         logger.info(
             "source scheduler started",

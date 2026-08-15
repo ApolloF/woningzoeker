@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import SourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import SourceAdapter, extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -47,6 +47,7 @@ class PandomoAdapter(SourceAdapter):
         )
         external_match = re.search(r"-(\d+)/?$", urlparse(url).path)
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=external_match.group(1) if external_match else urlparse(url).path.strip("/"),
             url=url,

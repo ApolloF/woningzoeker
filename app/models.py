@@ -124,6 +124,7 @@ class Listing(Base):
     availability_text: Mapped[str | None] = mapped_column(String(255))
     is_available: Mapped[bool] = mapped_column(Boolean, default=True)
     image_url: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     raw_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     decision: Mapped[str] = mapped_column(String(30), default=Decision.REVIEW.value)
     match_score: Mapped[int] = mapped_column(Integer, default=0)

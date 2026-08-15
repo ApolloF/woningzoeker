@@ -111,6 +111,12 @@ class BaseHTTPProvider:
                 "financial_wording": profile.financial_wording,
                 "guarantor_wording": profile.guarantor_wording,
                 "optional_base_message": standard_message or None,
+                "sender_name": profile.sender_name,
+                "perspective": profile.message_perspective,
+                "rewrite_mode": profile.message_rewrite_mode,
+                "always_include_financial": profile.always_include_financial,
+                "always_include_guarantor": profile.always_include_guarantor,
+                "required_message_points": profile.required_message_points,
             },
             "safe_fallback_draft": deterministic_draft,
         }
@@ -125,8 +131,12 @@ class BaseHTTPProvider:
             "Schrijf een korte natuurlijke Nederlandse interesse-reactie die het adres en één of "
             "twee werkelijk genoemde woningkenmerken gebruikt. Verzin of wijzig nooit inkomen, "
             "contracten, werkgevers, garanties, documenten of toestemming. Gebruik de expliciet "
-            "meegegeven financial_wording waar die de reactie versterkt. Gebruik guarantor_wording "
-            "alleen als de advertentie een garantsteller of harde inkomenseis noemt. Als "
+            "meegegeven financial_wording en guarantor_wording exact wanneer hun always_include-vlag "
+            "waar is. Neem required_message_points altijd letterlijk op. Houd sender_name en het "
+            "perspectief ik/namens ons of wij consequent; Florian is de afzender. Bij rewrite_mode "
+            "light mag alleen de woninggerichte opening licht wijzigen en blijft de persoonlijke "
+            "basistekst verder intact. Bij adaptive mag de formulering natuurlijker worden gemaakt "
+            "zonder feiten of perspectief te veranderen. Als "
             "optional_base_message is ingevuld, gebruik die dan als persoonlijke basis en pas hem "
             "alleen aan op de concrete woning. Geef alleen het "
             "gevraagde JSON-object terug."
@@ -271,7 +281,8 @@ class ListingLLMService:
         model = self._route_model(listing)
         try:
             result = self.provider.analyze(listing, profile, deterministic_draft, model)
-            return LLMRun(result.response_draft_nl.strip(), result, self.provider.provider_name, model)
+            draft = self._controlled_draft(result.response_draft_nl, deterministic_draft, profile)
+            return LLMRun(draft, result, self.provider.provider_name, model)
         except (httpx.HTTPError, LLMUnavailable, ValueError, TypeError) as exc:
             return LLMRun(
                 deterministic_draft,
@@ -280,6 +291,22 @@ class ListingLLMService:
                 model,
                 f"{type(exc).__name__}: {str(exc)[:300]}",
             )
+
+    @staticmethod
+    def _controlled_draft(llm_draft: str, deterministic_draft: str, profile: ApplicantProfileData) -> str:
+        if profile.message_rewrite_mode == "exact":
+            return deterministic_draft
+        draft = llm_draft.strip()
+        required = list(profile.required_message_points)
+        if profile.always_include_financial:
+            required.append(profile.financial_wording)
+        if profile.always_include_guarantor:
+            required.append(profile.guarantor_wording)
+        for item in required:
+            item = item.strip()
+            if item and item.casefold() not in draft.casefold():
+                draft = f"{draft}\n\n{item}"
+        return draft
 
     def _route_model(self, listing: NormalizedListing) -> str:
         cheap, standard, escalation = self.settings.llm_models()

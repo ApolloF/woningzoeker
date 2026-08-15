@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from app.models import Decision
@@ -57,3 +58,12 @@ def test_room_and_expired_listing_are_ignored() -> None:
     engine = RuleEngine()
     assert engine.evaluate(listing(property_type="kamer"), Criteria()).decision is Decision.IGNORE
     assert engine.evaluate(listing(is_available=False), Criteria()).decision is Decision.IGNORE
+
+
+def test_old_source_timestamp_is_ignored_but_unknown_timestamp_is_allowed() -> None:
+    old = datetime.now(UTC) - timedelta(minutes=181)
+    criteria = Criteria(max_listing_age_minutes=180)
+    result = RuleEngine().evaluate(listing(published_at=old), criteria)
+    assert result.decision is Decision.IGNORE
+    assert result.rules[0].rule == "listing_age"
+    assert RuleEngine().evaluate(listing(published_at=None), criteria).decision is Decision.AUTO_REACT

@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from app.adapters.base import SourceAdapter, parse_decimal, parse_int, parse_nl_currency
+from app.adapters.base import SourceAdapter, extract_published_at, parse_decimal, parse_int, parse_nl_currency
 from app.schemas import NormalizedListing
 
 
@@ -58,6 +58,7 @@ class CampusGroningenAdapter(SourceAdapter):
         status = "verhuurd" if "verhuurd" in full_text.lower() else "overzicht: beschikbaar"
         image = card.select_one("img[src]")
         return NormalizedListing(
+            published_at=extract_published_at(card),
             source_name=self.source_name,
             external_id=external_match.group(1),
             url=url,
@@ -100,6 +101,7 @@ class CampusGroningenAdapter(SourceAdapter):
                 "rooms": parse_int(rooms),
                 "bedrooms": parse_int(bedrooms),
                 "description": description[:5000],
+                "published_at": extract_published_at(soup) or listing.published_at,
                 "availability_text": "detail: beschikbaar" if is_available else "detail: reactie gesloten",
                 "is_available": is_available,
                 "raw_data": {**listing.raw_data, "detail_features": features},
