@@ -48,12 +48,15 @@ until a current safe surface is verified.
 
 `ListingLLMService` routes ordinary, incomplete, and ambiguous text to cheap, standard, and escalation
 models. OpenAI Responses and Anthropic Messages require schema-constrained output, validated again by
-Pydantic. Inputs are allowlisted public listing facts and minimal non-financial applicant facts.
+Pydantic. Inputs are allowlisted public listing facts, applicant facts, and the explicitly managed
+financial and guarantor wording.
 
 Deterministic rules remain authoritative. The LLM may downgrade `AUTO_REACT` to `REVIEW`, never promote
 a listing or change criteria. An unavailable, invalid, or review-requesting LLM result prevents
-automatic dispatch. Credentials, session state, private contact data, URLs, finances, and guarantor
-details never enter the model request.
+automatic dispatch. Credentials, session state, private contact data, URLs, and incidental sensitive
+facts never enter the
+model request. Explicit applicant-profile financial and guarantor wording does enter the request so the
+draft can address hard income requirements accurately.
 
 ## Reaction state, assistance, and privacy
 

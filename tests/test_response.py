@@ -29,6 +29,7 @@ def test_draft_mentions_real_listing_characteristics() -> None:
     assert "Havenstraat 5-C" in draft
     assert "37 m²" in draft
     assert "1 slaapkamer" in draft
+    assert "Samenwonend." in draft
     assert "Garantstellertekst" not in draft
 
 

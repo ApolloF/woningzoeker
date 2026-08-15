@@ -66,9 +66,23 @@ def test_bulten_adapter_parses_current_homesearch_offers() -> None:
     listings = BultenVastgoedAdapter().parse(fixture("bulten.html"))
     assert listings[0].external_id == "833963902"
     assert listings[0].address == "Oosterhamrikkade"
+    assert listings[0].rent_total == Decimal("1250.00")
     assert listings[0].area_m2 == 60
+    assert listings[0].bedrooms == 1
+    assert listings[0].rooms == 2
+    assert str(listings[0].image_url) == "https://static.homesearch.nl/photos/md/833963902.jpeg"
     assert listings[0].is_available is True
     assert listings[1].is_available is False
+
+
+def test_bulten_detail_adds_description_and_current_price() -> None:
+    adapter = BultenVastgoedAdapter()
+    overview = adapter.parse(fixture("bulten.html"))[0]
+    enriched = adapter._enrich(overview, fixture("bulten_detail.html"))
+    assert enriched.description == "Licht appartement aan het water met een ruime woonkamer en balkon."
+    assert enriched.rent_total == Decimal("1222.00")
+    assert enriched.property_type == "Appartement"
+    assert str(enriched.image_url) == "https://static.homesearch.nl/photos/lg/833963902.jpeg"
 
 
 def test_local_agency_parsers() -> None:

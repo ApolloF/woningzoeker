@@ -160,6 +160,8 @@ class Pipeline:
             listing.canonical_property_id = canonical.id
             self._copy_normalized(listing, normalized)
             listing.decision = decision.value
+            if normalized.is_available and decision is not Decision.IGNORE:
+                listing.archived_at = None
             listing.match_score = evaluation.score
             listing.rule_results = [result.model_dump(mode="json") for result in rule_results]
             listing.reasoning_summary = summary

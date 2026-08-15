@@ -104,7 +104,9 @@ class Listing(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("source_configs.id"), index=True)
-    canonical_property_id: Mapped[int] = mapped_column(ForeignKey("canonical_properties.id"), index=True)
+    canonical_property_id: Mapped[int] = mapped_column(
+        ForeignKey("canonical_properties.id"), index=True
+    )
     external_id: Mapped[str] = mapped_column(String(255))
     url: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(String(400))
@@ -133,6 +135,7 @@ class Listing(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     source: Mapped[SourceConfig] = relationship(back_populates="listings")
     canonical_property: Mapped[CanonicalProperty] = relationship(back_populates="listings")

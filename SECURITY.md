@@ -15,8 +15,9 @@ private. Containers use `no-new-privileges`.
 - Logs and audits contain only outcome codes, field names, provider/model names, and error classes.
 - Reaction screenshots are private artifacts and may contain contact values; restrict access and use a
   retention/backup policy appropriate for personal data.
-- The LLM allowlist excludes credentials, cookies, URLs, current address, private contact fields,
-  financial wording, and guarantor details. OpenAI requests set `store=false`.
+- The LLM allowlist excludes credentials, cookies, URLs, current address, and private contact fields.
+  It intentionally includes only the financial and guarantor wording explicitly managed in the
+  applicant profile. OpenAI requests set `store=false`.
 
 ## Browser and challenge safety
 

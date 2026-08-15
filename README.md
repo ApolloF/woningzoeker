@@ -83,10 +83,11 @@ The scheduler keeps every other source running while an item waits for help. Fai
 browser attempts are retried every three minutes, up to `REACTION_MAX_ATTEMPTS`; stale in-progress
 attempts are recovered after a restart. CAPTCHA is detected and escalated, never solved or bypassed.
 
-For Pararius and Huurwoningen.nl, run `python -m app.cli connect-source <source>` in an interactive
-local app environment to sign in with Google and complete any two-factor check yourself. The resulting
-Playwright browser session is stored encrypted; a stale session is sent to **Hulp nodig** for a fresh
-interactive sign-in rather than attempting to bypass the provider's controls.
+For Pararius and Huurwoningen.nl, run
+`.venv\Scripts\python.exe -m app.cli connect-source <source> --output playwright-data\<source>-session.json`
+locally, complete Google and two-factor authentication yourself, and upload the JSON file through
+**Settings > Accounts and Google/2FA sessions**. The imported browser session is encrypted; delete the
+local JSON afterward. A stale session is sent to **Hulp nodig** instead of bypassing provider controls.
 
 The dashboard and `GET /api/automation/readiness` show every activation blocker. A ready system has a
 running scheduler, an enabled LLM provider, encrypted contact details, at least one source in
@@ -95,10 +96,11 @@ running scheduler, an enabled LLM provider, encrypted contact details, at least 
 ## LLM boundary
 
 OpenAI uses the Responses API with strict JSON Schema and `store=false`. Anthropic uses the Messages
-API with structured output. The LLM receives public listing data plus a small allowlist of applicant
-facts. It never receives credentials, cookies, the listing URL, current street address, financial
-wording, guarantor details, or private form-contact values. It can downgrade an automatic candidate,
-but cannot promote a deterministic rejection.
+API with structured output. The LLM receives public listing data, allowlisted applicant facts, and the
+explicitly configured financial and guarantor wording used to tailor a message. Guarantor wording is
+only requested when the offer mentions a guarantor or hard income requirement. It never receives
+credentials, cookies, the listing URL, current street address, or private form-contact values. It can
+downgrade an automatic candidate, but cannot promote a deterministic rejection.
 
 ## Development and verification
 

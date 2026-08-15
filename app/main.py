@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import BackgroundTasks, Depends, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session, selectinload
@@ -48,15 +49,30 @@ app.router.routes[:] = [
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Annotated[Session, Depends(get_db)]) -> Response:
     auth.require_session(request)
+    visible = Listing.archived_at.is_(None)
     listings = db.scalars(
         select(Listing)
+        .where(visible)
         .options(selectinload(Listing.source))
         .order_by(desc(Listing.first_seen_at))
         .limit(100)
     ).all()
     sources = db.scalars(select(SourceConfig).order_by(SourceConfig.display_name)).all()
     events = db.scalars(select(AuditEvent).order_by(desc(AuditEvent.created_at)).limit(50)).all()
-    counts = dict(db.execute(select(Listing.decision, func.count()).group_by(Listing.decision)).all())
+    counts = dict(
+        db.execute(select(Listing.decision, func.count()).where(visible).group_by(Listing.decision)).all()
+    )
+    cleanup_count = db.scalar(
+        select(func.count())
+        .select_from(Listing)
+        .where(
+            visible,
+            (Listing.decision == "IGNORE") | Listing.is_available.is_(False),
+        )
+    )
+    archived_count = db.scalar(
+        select(func.count()).select_from(Listing).where(Listing.archived_at.is_not(None))
+    )
     assistance_count = db.scalar(
         select(func.count())
         .select_from(AssistanceRequest)
@@ -72,10 +88,48 @@ def dashboard(request: Request, db: Annotated[Session, Depends(get_db)]) -> Resp
             events=events,
             counts=counts,
             assistance_count=assistance_count or 0,
+            cleanup_count=cleanup_count or 0,
+            archived_count=archived_count or 0,
             readiness=reaction_service.readiness(),
             telegram_configured=bool(settings.telegram_bot_token and settings.telegram_chat_id),
         ),
     )
+
+
+@app.post("/admin/listings/archive-stale")
+def archive_stale_listings(
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    rows = db.scalars(
+        select(Listing).where(
+            Listing.archived_at.is_(None),
+            (Listing.decision == "IGNORE") | Listing.is_available.is_(False),
+        )
+    ).all()
+    archived_at = datetime.now(UTC)
+    for listing in rows:
+        listing.archived_at = archived_at
+    add_audit(db, "LISTINGS_ARCHIVED", f"{len(rows)} afgewezen of verwijderde advertenties opgeruimd")
+    db.commit()
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/admin/listings/restore-archived")
+def restore_archived_listings(
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    rows = db.scalars(select(Listing).where(Listing.archived_at.is_not(None))).all()
+    for listing in rows:
+        listing.archived_at = None
+    add_audit(db, "LISTINGS_RESTORED", f"{len(rows)} gearchiveerde advertenties hersteld")
+    db.commit()
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/listings/{listing_id}", response_class=HTMLResponse)
@@ -359,18 +413,34 @@ def update_source_session(
     source_name: str,
     request: Request,
     csrf_token: Annotated[str, Form()],
-    storage_state_json: Annotated[str, Form()],
+    session_file: Annotated[UploadFile, File()],
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
     if source_name not in SESSION_SOURCES:
         raise HTTPException(status_code=400, detail="source does not support browser sessions")
+    raw = session_file.file.read(524_289)
+    if len(raw) > 524_288:
+        raise HTTPException(status_code=413, detail="browser session file is too large")
     try:
-        storage_state = json.loads(storage_state_json)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=422, detail="invalid browser session JSON") from exc
-    if not isinstance(storage_state, dict):
-        raise HTTPException(status_code=422, detail="browser session must be a JSON object")
+        storage_state = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="invalid browser session file") from exc
+    if not isinstance(storage_state, dict) or not storage_state.get("cookies"):
+        raise HTTPException(status_code=422, detail="browser session does not contain cookies")
     reaction_service.save_browser_session(source_name, storage_state)
+    return RedirectResponse("/settings", status_code=303)
+
+
+@app.post("/settings/sessions/{source_name}/clear")
+def clear_source_session(
+    source_name: str,
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    if source_name not in SESSION_SOURCES:
+        raise HTTPException(status_code=400, detail="source does not support browser sessions")
+    reaction_service.clear_browser_session(source_name)
     return RedirectResponse("/settings", status_code=303)
 
 

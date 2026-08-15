@@ -81,13 +81,12 @@ class BaseHTTPProvider:
         profile: ApplicantProfileData,
         deterministic_draft: str,
     ) -> str:
-        # Deliberately excludes credentials, URLs, current street address, finances and guarantor data.
+        # Credentials, contact details, session data, URLs and the current street address stay excluded.
+        # The explicitly managed financial and guarantor wording is intentionally included.
         safe_facts = [
             fact for fact in profile.applicant_details if not cls.SENSITIVE_PROFILE_PATTERN.search(fact)
         ]
         standard_message = profile.standard_message.strip()
-        if cls.SENSITIVE_PROFILE_PATTERN.search(standard_message):
-            standard_message = ""
         payload = {
             "listing": {
                 "source": listing.source_name,
@@ -104,9 +103,13 @@ class BaseHTTPProvider:
             },
             "applicants": {
                 "names": profile.applicants,
+                "current_city": profile.current_city,
+                "current_situation": profile.current_situation,
                 "facts": safe_facts,
                 "lifestyle": profile.lifestyle,
                 "desired_tenure": profile.desired_tenure,
+                "financial_wording": profile.financial_wording,
+                "guarantor_wording": profile.guarantor_wording,
                 "optional_base_message": standard_message or None,
             },
             "safe_fallback_draft": deterministic_draft,
@@ -120,10 +123,12 @@ class BaseHTTPProvider:
             "volgens de tekst voor twee personen geschikt lijkt en markeer elke ongewone, "
             "juridische, financiële, betaalde of ontbrekende vereiste voor handmatige controle. "
             "Schrijf een korte natuurlijke Nederlandse interesse-reactie die het adres en één of "
-            "twee werkelijk genoemde woningkenmerken gebruikt. Verzin nooit inkomen, contracten, "
-            "werkgevers, garanties, documenten of toestemming. Neem geen financiële of "
-            "garantstellertekst op. Als optional_base_message is ingevuld, gebruik die dan als "
-            "persoonlijke basis en pas hem alleen aan op de concrete woning. Geef alleen het "
+            "twee werkelijk genoemde woningkenmerken gebruikt. Verzin of wijzig nooit inkomen, "
+            "contracten, werkgevers, garanties, documenten of toestemming. Gebruik de expliciet "
+            "meegegeven financial_wording waar die de reactie versterkt. Gebruik guarantor_wording "
+            "alleen als de advertentie een garantsteller of harde inkomenseis noemt. Als "
+            "optional_base_message is ingevuld, gebruik die dan als persoonlijke basis en pas hem "
+            "alleen aan op de concrete woning. Geef alleen het "
             "gevraagde JSON-object terug."
         )
 

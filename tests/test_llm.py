@@ -21,8 +21,8 @@ def profile() -> ApplicantProfileData:
         current_city="Groningen",
         current_situation="We wonen samen.",
         applicant_details=["Florian studeert.", "Sara werkt."],
-        financial_wording="Niet delen met het model.",
-        guarantor_wording="Niet delen met het model.",
+        financial_wording="Gezamenlijk inkomen circa €4.500 per maand.",
+        guarantor_wording="Een draagkrachtige garantsteller is beschikbaar.",
         lifestyle=["niet-rokers"],
         desired_tenure="lang samenwonen",
     )
@@ -53,15 +53,18 @@ def test_disabled_llm_uses_deterministic_fallback() -> None:
     assert run.result is None
 
 
-def test_llm_input_excludes_sensitive_profile_fields() -> None:
+def test_llm_input_only_includes_explicitly_managed_financial_fields() -> None:
     sensitive_profile = profile().model_copy(
         update={"applicant_details": ["Florian studeert.", "Netto inkomen is 3500 euro."]}
     )
     raw = BaseHTTPProvider._input(listing(), sensitive_profile, "Veilig concept")
     payload = json.loads(raw)
-    assert payload["applicants"]["facts"] == ["Florian studeert."]
-    assert sensitive_profile.financial_wording not in raw
-    assert sensitive_profile.guarantor_wording not in raw
+    applicants = payload["applicants"]
+    assert applicants["current_city"] == sensitive_profile.current_city
+    assert applicants["current_situation"] == sensitive_profile.current_situation
+    assert applicants["facts"] == ["Florian studeert."]
+    assert applicants["financial_wording"] == sensitive_profile.financial_wording
+    assert applicants["guarantor_wording"] == sensitive_profile.guarantor_wording
     assert str(listing().url) not in raw
 
 

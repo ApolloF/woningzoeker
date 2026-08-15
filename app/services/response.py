@@ -36,7 +36,7 @@ class DeterministicDutchResponseProvider:
             "Beste verhuurder,\n\n"
             f"Met veel interesse reageren wij op de woning aan {listing.address}. "
             f"Vooral {specific} spreken ons aan.\n\n"
-            f"Wij zijn {applicants} en wonen momenteel samen in Groningen. {details} "
+            f"Wij zijn {applicants}. {profile.current_situation} {details} "
             f"We zijn {lifestyle} en zoeken {profile.desired_tenure}.\n\n"
             f"{profile.financial_wording}\n\n"
             "Wij horen graag of we de woning mogen bezichtigen.\n\n"

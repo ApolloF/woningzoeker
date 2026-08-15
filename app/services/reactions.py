@@ -120,21 +120,69 @@ class ReactionService:
                 db.add(Credential(source_id=source.id, label="default", encrypted_payload=encrypted))
             db.commit()
 
+    def clear_browser_session(self, source_name: str) -> None:
+        cipher = self._cipher()
+        with SessionLocal() as db:
+            source = db.scalar(select(SourceConfig).where(SourceConfig.name == source_name))
+            if source is None:
+                raise ValueError("unknown source")
+            record = db.scalar(
+                select(Credential).where(
+                    Credential.source_id == source.id,
+                    Credential.label == "default",
+                )
+            )
+            if record is None:
+                return
+            credential = SourceCredentialData.model_validate(cipher.decrypt(record.encrypted_payload))
+            if credential.username and credential.password:
+                updated = credential.model_copy(update={"storage_state": None})
+                record.encrypted_payload = cipher.encrypt(updated.model_dump(mode="json"))
+                record.last_verified_at = None
+                record.last_error = None
+            else:
+                db.delete(record)
+            db.commit()
+
     def credential_statuses(self) -> dict[str, dict[str, Any]]:
+        statuses: dict[str, dict[str, Any]] = {}
         with SessionLocal() as db:
             rows = db.execute(
-                select(SourceConfig.name, Credential.last_verified_at, Credential.last_error).join(
+                select(SourceConfig.name, Credential).join(
                     Credential, Credential.source_id == SourceConfig.id
                 )
             ).all()
-        return {
-            name: {
-                "configured": True,
-                "last_verified_at": last_verified_at,
-                "last_error": last_error,
-            }
-            for name, last_verified_at, last_error in rows
-        }
+            if not rows:
+                return statuses
+            try:
+                cipher = self._cipher()
+            except ValueError:
+                return {
+                    name: {
+                        "configured": False,
+                        "has_password": False,
+                        "has_browser_session": False,
+                        "last_verified_at": record.last_verified_at,
+                        "last_error": "Hoofdversleutelingssleutel ontbreekt.",
+                    }
+                    for name, record in rows
+                }
+            for name, record in rows:
+                try:
+                    credential = SourceCredentialData.model_validate(cipher.decrypt(record.encrypted_payload))
+                    has_password = bool(credential.username and credential.password)
+                    has_browser_session = bool(credential.storage_state)
+                except (ValueError, ValidationError):
+                    has_password = False
+                    has_browser_session = False
+                statuses[name] = {
+                    "configured": has_password or has_browser_session,
+                    "has_password": has_password,
+                    "has_browser_session": has_browser_session,
+                    "last_verified_at": record.last_verified_at,
+                    "last_error": record.last_error,
+                }
+        return statuses
 
     def contact_is_configured(self) -> bool:
         with SessionLocal() as db:
