@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Inloggen · Woningzoeker{% endblock %}
+{% block content %}
+<section class="login-panel card">
+  <p class="eyebrow">Beveiligd dashboard</p>
+  <h1>Welkom terug</h1>
+  <p class="muted">Log in om woningaanbod, bronstatus en instellingen te bekijken.</p>
+  {% if error %}<p class="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ login_csrf }}">
+    <label>Wachtwoord<input type="password" name="password" autocomplete="current-password" required autofocus></label>
+    <button type="submit">Inloggen</button>
+  </form>
+</section>
+{% endblock %}
+

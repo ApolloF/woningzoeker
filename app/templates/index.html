@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div><p class="eyebrow">Groningen · persoonlijke woningagent</p><h1>Nieuw woningaanbod</h1></div>
+  <form method="post" action="/admin/run-all"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Bronnen nu uitvoeren</button></form>
+</section>
+
+{% if assistance_count %}<a class="assistance-alert card" href="/assistance"><strong>{{ assistance_count }} reactie{{ 's' if assistance_count != 1 else '' }} heeft jouw hulp nodig</strong><span>Open de wachtrij om CAPTCHA’s, voorwaarden of gewijzigde formulieren handmatig af te ronden →</span></a>{% endif %}
+
+{% if not readiness.ready %}<section class="readiness card"><div><p class="eyebrow">Nog niet autonoom actief</p><h2>Activeringsblokkades</h2></div><ul>{% for blocker in readiness.blockers %}<li>{{ blocker }}</li>{% endfor %}</ul><a class="button secondary" href="/settings">Instellingen openen</a></section>{% endif %}
+
+<section class="metrics">
+  <article><span>Auto-react kandidaat</span><strong>{{ counts.get('AUTO_REACT', 0) }}</strong></article>
+  <article><span>Hulp nodig</span><strong>{{ assistance_count }}</strong></article>
+  <article><span>Te beoordelen</span><strong>{{ counts.get('REVIEW', 0) }}</strong></article>
+  <article><span>Telegram</span><strong>{{ 'Actief' if telegram_configured else 'Niet ingesteld' }}</strong></article>
+</section>
+
+<section><div class="section-title"><div><p class="eyebrow">Laatste 100</p><h2>Advertenties</h2></div></div><div class="listing-grid">
+{% for listing in listings %}<a href="/listings/{{ listing.id }}" class="listing-card card">{% if listing.image_url %}<img src="{{ listing.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer">{% endif %}<div class="listing-body"><div class="row"><span class="badge {{ listing.decision|lower }}">{{ listing.decision }}</span><span class="score">{{ listing.match_score }}/100</span></div><h3>{{ listing.title }}</h3><p class="price">{% if listing.rent_total %}€ {{ '%.2f'|format(listing.rent_total) }} p/m{% else %}Prijs onbekend{% endif %}</p><p class="facts">{{ listing.area_m2 or '?' }} m² · {{ listing.bedrooms if listing.bedrooms is not none else '?' }} slpk · {{ listing.source.display_name }}</p><p class="muted">Gezien {{ listing.first_seen_at.strftime('%d-%m %H:%M') }} · {{ listing.reasoning_summary }}</p></div></a>{% else %}<div class="empty card"><h3>Nog geen advertenties</h3><p>Voer de bronnen uit om de eerste resultaten op te halen.</p></div>{% endfor %}
+</div></section>
+
+<section class="two-column"><div><div class="section-title"><h2>Bronstatus</h2></div><div class="card table-wrap"><table><thead><tr><th>Bron</th><th>Laatste succes</th><th>Items</th><th>Status</th><th></th></tr></thead><tbody>{% for source in sources %}<tr><td><strong>{{ source.display_name }}</strong><br><span class="muted">{{ source.mode }} · {{ source.poll_interval_seconds }}s</span></td><td>{{ source.last_success_at.strftime('%d-%m %H:%M') if source.last_success_at else 'Nog nooit' }}</td><td>{{ source.last_item_count if source.last_item_count is not none else '—' }}</td><td><span class="status-dot {{ 'ok' if source.enabled and source.consecutive_failures == 0 else 'bad' }}"></span>{{ 'Actief' if source.enabled else 'Gepauzeerd' }}{% if source.last_error %}<br><small>{{ source.last_error }}</small>{% endif %}</td><td><form action="/sources/{{ source.id }}/toggle" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">{{ 'Pauzeer' if source.enabled else 'Start' }}</button></form></td></tr>{% endfor %}</tbody></table></div></div>
+<div><div class="section-title"><h2>Activiteit</h2></div><div class="timeline card">{% for event in events %}<div><time>{{ event.created_at.strftime('%d-%m %H:%M') }}</time><p><strong>{{ event.event_type }}</strong><br>{{ event.summary }}</p></div>{% else %}<p>Nog geen activiteit.</p>{% endfor %}</div></div></section>
+{% endblock %}

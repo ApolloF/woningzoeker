@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>{% block title %}Woningzoeker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/assistance.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/" class="brand">Woningzoeker</a>
+      {% if session %}
+        <nav><a href="/">Overzicht</a><a href="/assistance">Hulp nodig</a><a href="/settings">Instellingen</a></nav>
+        <form action="/logout" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="link-button" type="submit">Uitloggen</button>
+        </form>
+      {% endif %}
+    </header>
+    {% if dry_run %}<div class="safety-banner">DRY-RUN — echte reacties zijn uitgeschakeld</div>{% endif %}
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>
