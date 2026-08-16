@@ -520,17 +520,23 @@ class ReactionBrowser:
                 with contextlib.suppress(Exception):
                     link.click(force=True)
                 with contextlib.suppress(Exception):
+                    clean_id = part.lstrip("#")
                     page.evaluate(
-                        """(part) => {
-                            const els = document.querySelectorAll(`a[href*="${part}"], button[data-target*="${part}"], [data-bs-target*="${part}"]`);
+                        """(targetId) => {
+                            const els = document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`);
                             for (const el of els) {
                                 if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
                                     el.click();
                                 }
                             }
                             if (els.length > 0) els[els.length - 1].click();
+                            const modal = document.getElementById(targetId);
+                            if (modal) {
+                                modal.classList.add('show', 'in');
+                                modal.style.display = 'block';
+                            }
                         }""",
-                        part,
+                        clean_id,
                     )
                 page.wait_for_timeout(1000)
             else:
