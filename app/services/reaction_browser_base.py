@@ -515,7 +515,7 @@ class ReactionBrowser:
             if not link.count():
                 link = page.locator(f"a[href*='{clean_part}']").first
             href = link.get_attribute("href") if link.count() else ""
-            if href and not href.startswith("#") and clean_part not in href.split("/")[-1]:
+            if href and not href.startswith("#") and f"#{clean_part}" not in href and clean_part not in href:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
                 return
             if link.count():
