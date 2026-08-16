@@ -347,17 +347,20 @@ class ReactionBrowser:
                     )
 
                 submit = form.locator(
-                    "button[type='submit'], input[type='submit'], #button-send, "
-                    "a.btn:has-text('Plan'), a:has-text('Plan'), a:has-text('Verzenden'), a:has-text('Reageren'), button:has-text('Plan')"
-                ).last
+                    "button[type='submit']:visible, input[type='submit']:visible, #button-send:visible, "
+                    "a.btn:has-text('Plan'):visible, a:has-text('Plan'):visible, a:has-text('Verzenden'):visible, "
+                    "a:has-text('Reageren'):visible, button:has-text('Plan'):visible, button[type='submit'], input[type='submit']"
+                ).first
                 if not submit.count():
                     return self._with_storage(
                         context,
                         self._review("SUBMIT_NOT_FOUND", "Geen expliciete verzendknop gevonden."),
                     )
-                submit.click()
+                with contextlib.suppress(Exception):
+                    submit.click(timeout=5000)
+                page.wait_for_timeout(2000)
                 with contextlib.suppress(TimeoutError):
-                    page.wait_for_load_state("networkidle", timeout=10_000)
+                    page.wait_for_load_state("domcontentloaded", timeout=5_000)
                 page.screenshot(path=str(after_path), full_page=True)
                 confirmation = self._confirmation_observed(page)
                 return self._with_storage(
