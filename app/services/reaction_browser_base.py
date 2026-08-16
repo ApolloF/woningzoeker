@@ -510,37 +510,36 @@ class ReactionBrowser:
     @staticmethod
     def _follow_action(page: Page, spec: ReactionSpec) -> None:
         for part in spec.action_href_parts:
-            link = page.locator(f"a[href*='{part}']:visible").first
+            clean_part = part.lstrip("#")
+            link = page.locator(f"a[href*='{clean_part}']:visible").first
             if not link.count():
-                link = page.locator(f"a[href*='{part}']").first
-            if not link.count():
-                continue
-            href = link.get_attribute("href") or ""
-            if href.startswith("#") or not href:
+                link = page.locator(f"a[href*='{clean_part}']").first
+            href = link.get_attribute("href") if link.count() else ""
+            if href and not href.startswith("#") and clean_part not in href.split("/")[-1]:
+                page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
+                return
+            if link.count():
                 with contextlib.suppress(Exception):
                     link.click(force=True)
-                with contextlib.suppress(Exception):
-                    clean_id = part.lstrip("#")
-                    page.evaluate(
-                        """(targetId) => {
-                            const els = document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`);
-                            for (const el of els) {
-                                if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
-                                    el.click();
-                                }
+            with contextlib.suppress(Exception):
+                page.evaluate(
+                    """(targetId) => {
+                        const els = document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`);
+                        for (const el of els) {
+                            if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
+                                el.click();
                             }
-                            if (els.length > 0) els[els.length - 1].click();
-                            const modal = document.getElementById(targetId);
-                            if (modal) {
-                                modal.classList.add('show', 'in');
-                                modal.style.display = 'block';
-                            }
-                        }""",
-                        clean_id,
-                    )
-                page.wait_for_timeout(1000)
-            else:
-                page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
+                        }
+                        if (els.length > 0) els[els.length - 1].click();
+                        const modal = document.getElementById(targetId);
+                        if (modal) {
+                            modal.classList.add('show', 'in');
+                            modal.style.display = 'block';
+                        }
+                    }""",
+                    clean_part,
+                )
+            page.wait_for_timeout(1000)
             return
         action_btn = page.locator(
             "button:has-text('Stel een vraag'), a:has-text('Stel een vraag'), "
