@@ -83,6 +83,12 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     "campus_groningen": ReactionSpec(
         account_required=True,
         login_url="https://www.campusgroningen.com/login",
+        form_selectors=(
+            "form#info-vraag-0",
+            "form[id*='info-vraag']",
+            "form.form-horizontal:has(textarea):visible",
+            "form:has(textarea):visible",
+        ),
     ),
     "bulten_vastgoed": ReactionSpec(
         form_selectors=("form:has(textarea):has(button[type='submit'])",),
@@ -457,18 +463,6 @@ class ReactionBrowser:
             page.wait_for_load_state("networkidle", timeout=10_000)
         with contextlib.suppress(TimeoutError):
             password.wait_for(state="hidden", timeout=10_000)
-        current_url = getattr(page, "url", "") or ""
-        body_text = ""
-        with contextlib.suppress(Exception):
-            body_text = page.locator("body").inner_text().lower()
-        if "/shop/" in current_url or "wordt lid voor" in body_text:
-            return self._with_storage(
-                context,
-                self._review(
-                    "MEMBERSHIP_REQUIRED",
-                    "Dit account heeft geen actief betaald lidmaatschap bij Campus Groningen (€29,50/jaar vereist).",
-                ),
-            )
         if self._has_auth_challenge(page):
             return self._with_storage(
                 context,
@@ -508,6 +502,7 @@ class ReactionBrowser:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             return
         action_btn = page.locator(
+            "button:has-text('Stel een vraag'), a:has-text('Stel een vraag'), "
             "button:has-text('Reageer'), a:has-text('Reageer op deze woning'), "
             "a.button:has-text('Contact'), button:has-text('Contact'), a.listing-detail-summary__action"
         ).first
