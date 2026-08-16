@@ -782,7 +782,14 @@ class ReactionBrowser:
             form = page.locator(selector).first
             if form.count():
                 with contextlib.suppress(Exception):
-                    form.wait_for(state="visible", timeout=2000)
+                    form.wait_for(state="visible", timeout=1000)
+                if form.is_visible():
+                    return form
+                with contextlib.suppress(Exception):
+                    form.evaluate(
+                        "el => { const m = el.closest('.modal, [id*=\"modal\"], [class*=\"modal\"]'); if (m) { m.classList.add('show', 'in'); m.style.display = 'block'; } }"
+                    )
+                    page.wait_for_timeout(500)
                 if form.is_visible():
                     return form
         forms = page.locator("form")
