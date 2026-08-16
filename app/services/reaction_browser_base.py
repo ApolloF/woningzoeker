@@ -518,23 +518,19 @@ class ReactionBrowser:
             if href and not href.startswith("#") and f"#{clean_part}" not in href and clean_part not in href:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
                 return
-            if link.count():
-                with contextlib.suppress(Exception):
-                    link.click(force=True)
             with contextlib.suppress(Exception):
                 page.evaluate(
                     """(targetId) => {
-                        const els = document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`);
-                        for (const el of els) {
-                            if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
-                                el.click();
-                            }
-                        }
-                        if (els.length > 0) els[els.length - 1].click();
                         const modal = document.getElementById(targetId);
-                        if (modal) {
-                            modal.classList.add('show', 'in');
-                            modal.style.display = 'block';
+                        if (modal && (window.getComputedStyle(modal).display === 'none' || !modal.classList.contains('show'))) {
+                            const visBtn = Array.from(document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`))
+                                .find(el => el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0);
+                            if (visBtn) {
+                                visBtn.click();
+                            } else {
+                                modal.classList.add('show', 'in');
+                                modal.style.display = 'block';
+                            }
                         }
                     }""",
                     clean_part,
@@ -906,6 +902,23 @@ class ReactionBrowser:
                 cb = checkboxes.nth(index)
                 if not cb.is_visible() or cb.is_disabled() or cb.is_checked():
                     continue
+                cb_label = ""
+                with contextlib.suppress(Exception):
+                    cb_label = cb.evaluate(
+                        """(el) => {
+                            let text = '';
+                            if (el.id) {
+                                const l = document.querySelector(`label[for="${el.id}"]`);
+                                if (l) text += ' ' + l.innerText;
+                            }
+                            const parent = el.closest('.gfield, .form-group, .field, .form-row, label, div');
+                            if (parent) {
+                                const l = parent.querySelector('label, .gfield_label, .control-label');
+                                if (l) text += ' ' + l.innerText;
+                            }
+                            return text;
+                        }"""
+                    )
                 cb_desc = " ".join(
                     filter(
                         None,
@@ -913,10 +926,11 @@ class ReactionBrowser:
                             cb.get_attribute("name"),
                             cb.get_attribute("id"),
                             cb.get_attribute("aria-label"),
+                            cb_label,
                         ),
                     )
                 ).lower()
-                if self._legal_checkbox.search(cb_desc):
+                if self._legal_checkbox.search(cb_desc) or "privacy" in cb_desc or "akkoord" in cb_desc:
                     with contextlib.suppress(Exception):
                         cb.check(force=True)
                         filled.append(cb_desc[:120])
@@ -930,6 +944,23 @@ class ReactionBrowser:
                 continue
             if not control.is_visible() or control.is_disabled():
                 continue
+            ctrl_label = ""
+            with contextlib.suppress(Exception):
+                ctrl_label = control.evaluate(
+                    """(el) => {
+                        let text = '';
+                        if (el.id) {
+                            const l = document.querySelector(`label[for="${el.id}"]`);
+                            if (l) text += ' ' + l.innerText;
+                        }
+                        const parent = el.closest('.gfield, .form-group, .field, .form-row, label, div');
+                        if (parent) {
+                            const l = parent.querySelector('label, .gfield_label, .control-label');
+                            if (l) text += ' ' + l.innerText;
+                        }
+                        return text;
+                    }"""
+                )
             descriptor = " ".join(
                 filter(
                     None,
@@ -939,6 +970,7 @@ class ReactionBrowser:
                         control.get_attribute("placeholder"),
                         control.get_attribute("autocomplete"),
                         control.get_attribute("aria-label"),
+                        ctrl_label,
                     ),
                 )
             ).lower()
