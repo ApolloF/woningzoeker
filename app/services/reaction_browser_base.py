@@ -244,17 +244,18 @@ class ReactionBrowser:
                     )
                 self._follow_action(page, spec)
                 self._dismiss_cookie_banner(page)
-                if self._has_challenge(page):
-                    if not self.solve_page_challenge(page) and not self._human_solve_challenge(
-                        page, challenge_meta
-                    ):
-                        return self._with_storage(
-                            context,
-                            self._review(
-                                "CAPTCHA_REQUIRED",
-                                "De site vraagt om een menselijke CAPTCHA-controle.",
-                            ),
-                        )
+                if (
+                    self._has_challenge(page)
+                    and not self.solve_page_challenge(page)
+                    and not self._human_solve_challenge(page, challenge_meta)
+                ):
+                    return self._with_storage(
+                        context,
+                        self._review(
+                            "CAPTCHA_REQUIRED",
+                            "De site vraagt om een menselijke CAPTCHA-controle.",
+                        ),
+                    )
                 if page.locator("input[type='password']").count():
                     return self._with_storage(
                         context,
@@ -355,14 +356,15 @@ class ReactionBrowser:
                 context,
                 self._review("REAUTHENTICATION_REQUIRED", "De site vraagt om extra inlogverificatie."),
             )
-        if self._has_challenge(page):
-            if not self.solve_page_challenge(page) and not self._human_solve_challenge(
-                page, challenge_meta
-            ):
-                return self._with_storage(
-                    context,
-                    self._review("CAPTCHA_REQUIRED", "Inloggen vereist een menselijke CAPTCHA-controle."),
-                )
+        if (
+            self._has_challenge(page)
+            and not self.solve_page_challenge(page)
+            and not self._human_solve_challenge(page, challenge_meta)
+        ):
+            return self._with_storage(
+                context,
+                self._review("CAPTCHA_REQUIRED", "Inloggen vereist een menselijke CAPTCHA-controle."),
+            )
         if not credential.username or not credential.password:
             return self._with_storage(
                 context,
@@ -450,6 +452,50 @@ class ReactionBrowser:
             "[data-sitekey]",
         )
         return any(page.locator(selector).count() for selector in selectors)
+
+    def _human_solve_challenge(self, page: Page, meta: SessionMeta | None) -> bool:
+        """Relay the live challenge to a human and resume once they clear it.
+
+        The person performs the CAPTCHA themselves via the dashboard; their taps and
+        keystrokes are forwarded to the held page. Returns True only when the challenge
+        clears (or the person confirms completion) before the timeout, so the caller may
+        continue the automated flow. This is the fallback when no autonomous solver
+        token is available; it never bypasses bot-detection without a human.
+        """
+        if meta is None or not self.settings.captcha_interactive_enabled:
+            return False
+        try:
+            return solve_interactively(page, self.settings, meta, self._challenge_active)
+        except Exception:
+            logger.exception(
+                "interactive captcha solve failed",
+                extra={"context": {"submission_id": meta.submission_id}},
+            )
+            return False
+
+    @staticmethod
+    def _challenge_active(page: Page) -> bool:
+        """Whether a token-based challenge is still unsolved.
+
+        reCAPTCHA/hCaptcha widgets stay in the DOM after solving, so presence alone is
+        not enough — the challenge is cleared once the hidden response token is filled.
+        """
+        with contextlib.suppress(Exception):
+            if page.locator(
+                ".g-recaptcha, iframe[src*='recaptcha'], [name='g-recaptcha-response']"
+            ).count():
+                token = page.locator("textarea[name='g-recaptcha-response']").first
+                if not token.count() or not (token.input_value() or "").strip():
+                    return True
+            if page.locator("iframe[src*='hcaptcha'], [name='h-captcha-response']").count():
+                token = page.locator("textarea[name='h-captcha-response']").first
+                if not token.count() or not (token.input_value() or "").strip():
+                    return True
+            if page.locator("[data-sitekey]:not(.g-recaptcha)").count():
+                turnstile = page.locator("input[name='cf-turnstile-response']").first
+                if not turnstile.count() or not (turnstile.input_value() or "").strip():
+                    return True
+        return False
 
     def solve_page_challenge(self, page: Page) -> bool:
         if not self.captcha_solver.is_enabled():

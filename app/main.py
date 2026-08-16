@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response,
+)
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -27,6 +33,7 @@ from app.models import (
 )
 from app.schemas import ApplicantProfileData, Criteria, PrivateContactData, SourceCredentialData
 from app.services.audit import add_audit
+from app.services.interactive_captcha import get_session
 
 reaction_service = pipeline.reaction_service
 ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
@@ -325,6 +332,85 @@ def retry_assistance(
         raise HTTPException(status_code=404, detail="open assistance request not found")
     background_tasks.add_task(reaction_service.dispatch, assistance.listing_id, force=True)
     return RedirectResponse("/assistance", status_code=303)
+
+
+@app.get("/assistance/solve/{submission_id}", response_class=HTMLResponse)
+def solve_captcha_page(submission_id: int, request: Request) -> Response:
+    auth.require_session(request)
+    session = get_session(submission_id)
+    return templates.TemplateResponse(
+        request=request,
+        name="solve_captcha.html",
+        context=page_context(
+            request,
+            submission_id=submission_id,
+            active=session is not None,
+            meta=session.meta if session else None,
+        ),
+    )
+
+
+@app.get("/assistance/solve/{submission_id}/frame")
+def solve_captcha_frame(submission_id: int, request: Request) -> Response:
+    auth.require_session(request)
+    session = get_session(submission_id)
+    if session is None:
+        return Response(status_code=204)
+    frame = session.frame()
+    if frame is None:
+        return Response(status_code=204)
+    return Response(
+        content=frame,
+        media_type="image/png",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@app.get("/assistance/solve/{submission_id}/status")
+def solve_captcha_status(submission_id: int, request: Request) -> Response:
+    auth.require_session(request)
+    session = get_session(submission_id)
+    if session is None:
+        return JSONResponse({"active": False, "solved": True})
+    return JSONResponse(
+        {
+            "active": True,
+            "solved": session.solved.is_set(),
+            "confirmed": session.confirmed.is_set(),
+            "remaining_seconds": session.remaining_seconds(),
+        }
+    )
+
+
+@app.post("/assistance/solve/{submission_id}/input")
+def solve_captcha_input(
+    submission_id: int,
+    request: Request,
+    csrf_token: Annotated[str, Form()],
+    kind: Annotated[str, Form()],
+    x: Annotated[float, Form()] = 0.0,
+    y: Annotated[float, Form()] = 0.0,
+    dy: Annotated[float, Form()] = 0.0,
+    value: Annotated[str, Form()] = "",
+) -> Response:
+    auth.verify_csrf(request, csrf_token)
+    session = get_session(submission_id)
+    if session is None:
+        return JSONResponse({"active": False, "solved": True})
+    if kind == "done":
+        session.confirmed.set()
+    elif kind in {"click", "scroll", "text", "key"}:
+        session.push({"type": kind, "x": x, "y": y, "dy": dy, "value": value})
+    else:
+        raise HTTPException(status_code=400, detail="unknown input kind")
+    return JSONResponse(
+        {
+            "active": True,
+            "solved": session.solved.is_set(),
+            "confirmed": session.confirmed.is_set(),
+            "remaining_seconds": session.remaining_seconds(),
+        }
+    )
 
 
 @app.get("/submissions/{submission_id}/artifact/{kind}")

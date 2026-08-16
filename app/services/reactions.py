@@ -330,8 +330,10 @@ class ReactionService:
             db.commit()
             submission_id = submission.id
             listing_url = listing.url
+            listing_title = listing.title
             message = listing.response_draft
             source_name = source.name
+            source_display = source.display_name
             source_id = source.id
             accept_legal_confirmations = criteria.auto_accept_legal_confirmations
 
@@ -359,6 +361,8 @@ class ReactionService:
                 submission_id=submission_id,
                 allow_submit=allow_submit,
                 accept_legal_confirmations=accept_legal_confirmations,
+                listing_title=listing_title,
+                source_display=source_display,
             )
         except Exception as exc:
             logger.exception(

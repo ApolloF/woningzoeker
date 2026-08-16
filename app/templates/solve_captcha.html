@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}CAPTCHA oplossen · Woningzoeker{% endblock %}
+{% block content %}
+<section class="hero"><div><p class="eyebrow">Human-in-the-loop</p><h1>CAPTCHA oplossen</h1><p class="muted">De reactie staat klaar. Los alleen de CAPTCHA op; de agent verstuurt daarna automatisch.</p></div></section>
+
+{% if not active %}
+<article class="card empty">
+  <h2>Geen actieve CAPTCHA</h2>
+  <p>Er wacht nu geen live challenge voor deze reactie. Die is waarschijnlijk al opgelost of verlopen. Controleer de hulpwachtrij als er nog iets openstaat.</p>
+  <a class="button" href="/assistance">Naar hulpwachtrij</a>
+  <a class="button secondary" href="/">Terug naar overzicht</a>
+</article>
+{% else %}
+<section class="card" id="solve-card" data-submission="{{ submission_id }}">
+  {% if meta %}<p class="eyebrow">{{ meta.source_display }}</p><h2>{{ meta.listing_title or 'Woningreactie' }}</h2>{% endif %}
+  <p class="muted" id="solve-status">Verbinden met de live pagina…</p>
+  <div class="solve-stage">
+    <img id="solve-frame" alt="Live pagina" draggable="false">
+    <div id="solve-overlay" title="Tik om te klikken"></div>
+  </div>
+  <div class="solve-controls">
+    <button type="button" class="secondary" data-scroll="-500">▲ Omhoog</button>
+    <button type="button" class="secondary" data-scroll="500">▼ Omlaag</button>
+    <button type="button" class="secondary" data-key="Enter">Enter</button>
+    <button type="button" class="secondary" data-key="Backspace">⌫ Wis</button>
+  </div>
+  <div class="solve-typebar">
+    <input id="solve-text" type="text" autocomplete="off" placeholder="Typ hier als de challenge tekst vraagt…">
+    <button type="button" class="secondary" id="solve-send-text">Verstuur tekst</button>
+  </div>
+  <div class="solve-actions">
+    <button type="button" id="solve-done">Klaar — ga door met verzenden</button>
+    <a class="button secondary" href="{% if meta %}{{ meta.listing_url }}{% else %}#{% endif %}" target="_blank" rel="noopener noreferrer">Open advertentie</a>
+  </div>
+</section>
+
+<style>
+  .solve-stage { position: relative; max-width: 100%; margin: 1rem 0; border: 1px solid var(--border, #ccc); border-radius: 8px; overflow: hidden; background: #111; }
+  #solve-frame { display: block; width: 100%; height: auto; }
+  #solve-overlay { position: absolute; inset: 0; cursor: crosshair; }
+  .solve-controls, .solve-typebar, .solve-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .5rem 0; }
+  .solve-typebar input { flex: 1 1 12rem; }
+</style>
+
+<script>
+(function () {
+  const card = document.getElementById("solve-card");
+  const submissionId = card.dataset.submission;
+  const csrf = {{ csrf_token | tojson }};
+  const base = "/assistance/solve/" + submissionId;
+  const frame = document.getElementById("solve-frame");
+  const overlay = document.getElementById("solve-overlay");
+  const statusEl = document.getElementById("solve-status");
+  const textInput = document.getElementById("solve-text");
+  let stopped = false;
+
+  function post(fields) {
+    const body = new FormData();
+    body.append("csrf_token", csrf);
+    for (const [k, v] of Object.entries(fields)) body.append(k, v);
+    return fetch(base + "/input", { method: "POST", body })
+      .then((r) => r.json())
+      .catch(() => ({ active: false }));
+  }
+
+  function refreshFrame() {
+    if (stopped) return;
+    const img = new Image();
+    img.onload = () => { if (!stopped) frame.src = img.src; };
+    img.src = base + "/frame?t=" + Date.now();
+  }
+
+  overlay.addEventListener("click", (e) => {
+    const rect = frame.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    post({ kind: "click", x: x.toFixed(4), y: y.toFixed(4) }).then(handleState);
+    setTimeout(refreshFrame, 300);
+  });
+
+  document.querySelectorAll("[data-scroll]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      post({ kind: "scroll", dy: btn.dataset.scroll }).then(handleState);
+      setTimeout(refreshFrame, 300);
+    });
+  });
+  document.querySelectorAll("[data-key]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      post({ kind: "key", value: btn.dataset.key }).then(handleState);
+      setTimeout(refreshFrame, 300);
+    });
+  });
+  document.getElementById("solve-send-text").addEventListener("click", () => {
+    const value = textInput.value;
+    if (!value) return;
+    post({ kind: "text", value }).then(handleState);
+    textInput.value = "";
+    setTimeout(refreshFrame, 300);
+  });
+  document.getElementById("solve-done").addEventListener("click", () => {
+    statusEl.textContent = "Doorgeven aan de agent…";
+    post({ kind: "done" }).then(handleState);
+  });
+
+  function handleState(state) {
+    if (!state || state.active === false || state.solved) {
+      stopped = true;
+      statusEl.textContent = "Challenge afgerond — de agent verstuurt de reactie. Je kunt dit venster sluiten.";
+      overlay.style.pointerEvents = "none";
+      return;
+    }
+    statusEl.textContent = "Los de CAPTCHA op (nog ~" + state.remaining_seconds + "s). Tik direct op de afbeelding.";
+  }
+
+  function pollStatus() {
+    if (stopped) return;
+    fetch(base + "/status").then((r) => r.json()).then(handleState).catch(() => {});
+  }
+
+  refreshFrame();
+  setInterval(refreshFrame, 800);
+  setInterval(pollStatus, 1500);
+  pollStatus();
+})();
+</script>
+{% endif %}
+{% endblock %}
