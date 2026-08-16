@@ -849,8 +849,14 @@ class ReactionBrowser:
         message: str,
         accept_legal_confirmations: bool = False,
     ) -> list[str] | BrowserReactionResult:
+        has_last_field = (
+            form.locator(
+                "input[name*='last' i], input[name*='achternaam' i], input[id*='last' i], input[id*='achternaam' i], input[placeholder*='achternaam' i]"
+            ).count()
+            > 0
+        )
         values = {
-            "first": contact.first_name,
+            "first": contact.first_name if has_last_field else f"{contact.first_name} {contact.last_name}".strip(),
             "last": contact.last_name,
             "initial": contact.initials,
             "email": str(contact.email),
@@ -975,28 +981,26 @@ class ReactionBrowser:
 
     @staticmethod
     def _field_key(descriptor: str, control_type: str, tag_name: str) -> str | None:
+        if tag_name.upper() == "TEXTAREA":
+            return "message"
+        if control_type == "email":
+            return "email"
         patterns = (
             ("email", r"email|e-mail"),
-            ("first", r"first|voornaam|given-name"),
             ("last", r"last|achternaam|family-name|surname"),
             ("initial", r"initial|voorletter"),
             ("mobile", r"mobile|mobiel"),
-            ("phone", r"phone|telefoon|tel\b"),
+            ("phone", r"phone|telefoon|\btel\b"),
+            ("first", r"first|voornaam|given-name|\bnaam\b|\bname\b"),
             ("zip", r"postcode|postal|zip"),
             ("number", r"house.?number|huisnummer|address_number"),
             ("address", r"street|straat|adres|address"),
             ("city", r"city|plaats|woonplaats"),
             ("message", r"message|bericht|remark|toelichting|motivatie|motivation|reactie|comment"),
         )
-        if control_type == "email":
-            return "email"
-        if tag_name.upper() == "TEXTAREA" and not descriptor:
-            return "message"
         for key, pattern in patterns:
             if re.search(pattern, descriptor, re.I):
                 return key
-        if tag_name.upper() == "TEXTAREA":
-            return "message"
         return None
 
     @staticmethod
