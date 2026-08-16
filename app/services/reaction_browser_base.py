@@ -56,7 +56,7 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
         form_selectors=("form:has(textarea):has(button[type='submit'])",),
     ),
     "gruno_vastgoed": ReactionSpec(
-        form_selectors=("form:has(#Message):has(#Firstname)",),
+        form_selectors=("form:has(#Message):has(#Firstname)", "form:has(#Message)"),
     ),
     "123wonen_groningen": ReactionSpec(
         form_selectors=("#formulier-pandbrochure-form",),
@@ -290,7 +290,10 @@ class ReactionBrowser:
                         ),
                     )
 
-                submit = form.locator("button[type='submit'], input[type='submit']").last
+                submit = form.locator(
+                    "button[type='submit'], input[type='submit'], #button-send, "
+                    "a.btn:has-text('Plan'), a:has-text('Plan'), a:has-text('Verzenden'), a:has-text('Reageren'), button:has-text('Plan')"
+                ).last
                 if not submit.count():
                     return self._with_storage(
                         context,
@@ -448,8 +451,15 @@ class ReactionBrowser:
             ".g-recaptcha",
             "iframe[src*='recaptcha']",
             "iframe[src*='hcaptcha']",
+            "iframe[src*='cloudflare']",
+            "iframe[src*='challenges.cloudflare.com']",
+            ".cf-turnstile",
             "[name='g-recaptcha-response']",
+            "[name='h-captcha-response']",
+            "[name='cf-turnstile-response']",
             "[data-sitekey]",
+            "img[src*='captcha' i]",
+            "img[id*='captcha' i]",
         )
         return any(page.locator(selector).count() for selector in selectors)
 
@@ -475,25 +485,27 @@ class ReactionBrowser:
 
     @staticmethod
     def _challenge_active(page: Page) -> bool:
-        """Whether a token-based challenge is still unsolved.
-
-        reCAPTCHA/hCaptcha widgets stay in the DOM after solving, so presence alone is
-        not enough — the challenge is cleared once the hidden response token is filled.
-        """
+        """Whether a challenge widget is active and its response token is still empty."""
         with contextlib.suppress(Exception):
             if page.locator(
                 ".g-recaptcha, iframe[src*='recaptcha'], [name='g-recaptcha-response']"
             ).count():
-                token = page.locator("textarea[name='g-recaptcha-response']").first
+                token = page.locator("textarea[name='g-recaptcha-response'], [name='g-recaptcha-response']").first
                 if not token.count() or not (token.input_value() or "").strip():
                     return True
             if page.locator("iframe[src*='hcaptcha'], [name='h-captcha-response']").count():
-                token = page.locator("textarea[name='h-captcha-response']").first
+                token = page.locator("textarea[name='h-captcha-response'], [name='h-captcha-response']").first
                 if not token.count() or not (token.input_value() or "").strip():
                     return True
-            if page.locator("[data-sitekey]:not(.g-recaptcha)").count():
-                turnstile = page.locator("input[name='cf-turnstile-response']").first
+            if page.locator(
+                "[data-sitekey]:not(.g-recaptcha), iframe[src*='cloudflare'], iframe[src*='challenges.cloudflare.com'], .cf-turnstile"
+            ).count():
+                turnstile = page.locator("input[name='cf-turnstile-response'], [name='cf-turnstile-response']").first
                 if not turnstile.count() or not (turnstile.input_value() or "").strip():
+                    return True
+            if page.locator("img[src*='captcha' i], img[id*='captcha' i]").count():
+                captcha_input = page.locator("input[name*='captcha' i], input[id*='captcha' i]").first
+                if captcha_input.count() and not (captcha_input.input_value() or "").strip():
                     return True
         return False
 
@@ -521,8 +533,7 @@ class ReactionBrowser:
                     self._inject_captcha_token(page, token, field_names=["g-recaptcha-response"])
                     with contextlib.suppress(Exception):
                         page.wait_for_timeout(1000)
-                    if not self._has_challenge(page):
-                        return True
+                    return True
 
             # 2. hCaptcha
             hcaptcha_frame = page.locator("iframe[src*='hcaptcha']").first
@@ -544,12 +555,13 @@ class ReactionBrowser:
                     )
                     with contextlib.suppress(Exception):
                         page.wait_for_timeout(1000)
-                    if not self._has_challenge(page):
-                        return True
+                    return True
 
-            # 3. Turnstile
-            turnstile_frame = page.locator("iframe[src*='turnstile']").first
-            turnstile_el = page.locator(".cf-turnstile[data-sitekey]").first
+            # 3. Turnstile / Cloudflare
+            turnstile_frame = page.locator(
+                "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com']"
+            ).first
+            turnstile_el = page.locator(".cf-turnstile[data-sitekey], [data-sitekey]").first
             t_sitekey = None
             if turnstile_el.count() and turnstile_el.get_attribute("data-sitekey"):
                 t_sitekey = turnstile_el.get_attribute("data-sitekey")
@@ -567,8 +579,7 @@ class ReactionBrowser:
                     )
                     with contextlib.suppress(Exception):
                         page.wait_for_timeout(1000)
-                    if not self._has_challenge(page):
-                        return True
+                    return True
 
             # 4. Image CAPTCHA
             captcha_img = page.locator("img[src*='captcha' i], img[id*='captcha' i]").first
@@ -585,8 +596,7 @@ class ReactionBrowser:
                     captcha_input.fill(solved_text)
                     with contextlib.suppress(Exception):
                         page.wait_for_timeout(1000)
-                    if not self._has_challenge(page):
-                        return True
+                    return True
         except Exception:
             logger.exception("Error while solving page captcha challenge")
 
@@ -608,16 +618,30 @@ class ReactionBrowser:
                     }
                     elems.forEach(el => {
                         el.value = token;
+                        el.innerHTML = token;
                         el.dispatchEvent(new Event("input", { bubbles: true }));
                         el.dispatchEvent(new Event("change", { bubbles: true }));
                     });
                 }
+                document.querySelectorAll("[data-callback]").forEach(el => {
+                    const fnName = el.getAttribute("data-callback");
+                    if (fnName && typeof window[fnName] === "function") {
+                        try { window[fnName](token); } catch (e) {}
+                    }
+                });
                 if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
                     for (const cid in window.___grecaptcha_cfg.clients) {
                         const client = window.___grecaptcha_cfg.clients[cid];
                         for (const k in client) {
                             if (client[k] && typeof client[k].callback === 'function') {
                                 try { client[k].callback(token); } catch (e) {}
+                            }
+                            if (client[k] && typeof client[k] === 'object') {
+                                for (const subk in client[k]) {
+                                    if (client[k][subk] && typeof client[k][subk].callback === 'function') {
+                                        try { client[k][subk].callback(token); } catch (e) {}
+                                    }
+                                }
                             }
                         }
                     }
@@ -745,7 +769,13 @@ class ReactionBrowser:
                         "Een verplicht veld kan niet betrouwbaar worden ingevuld.",
                     )
                 continue
-            control.fill(values[key])
+            val = values[key]
+            max_len = control.get_attribute("maxlength") or control.get_attribute("data-val-length-max")
+            if max_len and max_len.isdigit():
+                limit = int(max_len)
+                if len(val) > limit:
+                    val = val[:limit]
+            control.fill(val)
             filled.append(descriptor[:120] or key)
         if "message" not in {self._field_key(name, "text", "") for name in filled}:  # noqa: SIM102
             if form.locator("textarea:visible").count() == 0:
