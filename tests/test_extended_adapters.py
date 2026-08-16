@@ -7,6 +7,7 @@ from app.adapters.campus_groningen import CampusGroningenAdapter
 from app.adapters.funda import FundaRentalAdapter
 from app.adapters.gruno import GrunoVastgoedAdapter
 from app.adapters.huurwoningen import HuurwoningenAdapter
+from app.adapters.kamernet import KamernetAdapter
 from app.adapters.maxx import MaxxGroningenAdapter
 from app.adapters.pandomo import PandomoAdapter
 from app.adapters.pararius import ParariusAdapter
@@ -28,12 +29,42 @@ def test_requested_sources_are_registered() -> None:
         "funda_rentals",
         "gruno_vastgoed",
         "huurwoningen",
+        "kamernet",
         "maxx_groningen",
         "pandomo",
         "pararius",
         "rotsvast_groningen",
         "woldring",
     }
+
+
+def test_kamernet_adapter_parses_cards_and_enrichment() -> None:
+    adapter = KamernetAdapter()
+    listings = adapter.parse(fixture("kamernet.html"))
+    assert len(listings) == 2
+    first = listings[0]
+    assert first.external_id == "2187391"
+    assert first.address == "Oosterstraat 42-A"
+    assert first.city == "Groningen"
+    assert first.postcode == "9711 NV"
+    assert first.property_type == "appartement"
+    assert first.rent_total == Decimal("1250.00")
+    assert first.area_m2 == 55
+    assert first.rooms == 2
+    assert first.bedrooms == 1
+    assert first.is_available is True
+    assert str(first.image_url) == "https://assets.kamernet.nl/photos/md/2187391_1.jpg"
+
+    second = listings[1]
+    assert second.external_id == "2187392"
+    assert second.address == "Korreweg 88"
+    assert second.rent_total == Decimal("850.00")
+    assert second.area_m2 == 32
+    assert second.is_available is False
+
+    enriched = adapter._enrich(first, fixture("kamernet_detail.html"))
+    assert "Inschrijving bij de gemeente is uiteraard mogelijk" in (enriched.description or "")
+    assert enriched.rent_total == Decimal("1250.00")
 
 
 def test_pararius_and_huurwoningen_shared_markup() -> None:

@@ -104,3 +104,21 @@ def test_auto_react_age_is_separate_from_listing_visibility() -> None:
     result = RuleEngine().evaluate(listing(published_at=published), criteria)
     assert result.decision is Decision.REVIEW
     assert any(rule.rule == "auto_react_age" for rule in result.rules)
+
+
+def test_listing_without_registration_allowed_is_ignored() -> None:
+    engine = RuleEngine()
+    phrases = [
+        "Inschrijving is niet mogelijk.",
+        "Geen inschrijving mogelijk op dit adres.",
+        "Zonder inschrijving bij de gemeente.",
+        "No registration possible for this room.",
+        "Registration is not allowed.",
+        "Geen adresregistratie toegestaan.",
+        "Niet mogelijk om in te schrijven.",
+    ]
+    for phrase in phrases:
+        candidate = listing(description=f"Leuk appartement in centrum. {phrase} Geschikt voor student.")
+        result = engine.evaluate(candidate, Criteria())
+        assert result.decision is Decision.IGNORE, f"Failed for phrase: {phrase}"
+        assert result.rules[0].rule == "registration_not_allowed"

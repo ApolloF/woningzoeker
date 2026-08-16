@@ -21,6 +21,8 @@ class LLMUnavailable(RuntimeError):
 class ListingLLMResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    is_fitting: bool | None = None
+    registration_allowed: bool | None = None
     suitable_for_two: bool | None
     unusual_requirements: list[str] = Field(max_length=12)
     needs_review: bool
@@ -127,8 +129,13 @@ class BaseHTTPProvider:
     def _instructions() -> str:
         return (
             "Analyseer uitsluitend de meegegeven openbare woningadvertentie. Bepaal of de woning "
-            "volgens de tekst voor twee personen geschikt lijkt en markeer elke ongewone, "
-            "juridische, financiële, betaalde of ontbrekende vereiste voor handmatige controle. "
+            "passend is (is_fitting) voor de kandidaten, of inschrijving bij de gemeente op het adres is "
+            "toegestaan (registration_allowed), en of de woning voor twee personen geschikt lijkt "
+            "(suitable_for_two). Markeer elke ongewone, juridische, financiële, betaalde of ontbrekende "
+            "vereiste voor handmatige controle (needs_review en unusual_requirements). "
+            "Als de tekst vermeldt dat inschrijving bij de gemeente NIET mogelijk of niet toegestaan is "
+            "(zoals 'geen inschrijving', 'no registration', 'zonder inschrijving', 'inschrijven niet mogelijk'), "
+            "zet dan registration_allowed op false, is_fitting op false en leg dit duidelijk uit in explanation. "
             "Schrijf een korte natuurlijke Nederlandse interesse-reactie en noem het adres op een "
             "normale manier. Som geen vierkante meters, kamer- of slaapkameraantallen op en gebruik "
             "zulke cijfers niet als reden voor enthousiasme; dat klinkt onnatuurlijk. Controleer "

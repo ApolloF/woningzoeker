@@ -197,6 +197,10 @@ class Pipeline:
                     "provider": llm_run.provider,
                     "model": llm_run.model,
                     "error": llm_run.error,
+                    "is_fitting": llm_run.result.is_fitting if llm_run.result else None,
+                    "registration_allowed": (
+                        llm_run.result.registration_allowed if llm_run.result else None
+                    ),
                     "needs_review": llm_run.result.needs_review if llm_run.result else None,
                     "suitable_for_two": (
                         llm_run.result.suitable_for_two if llm_run.result else None
@@ -287,11 +291,24 @@ class Pipeline:
             )
             return decision, rules, f"{summary} Eerdere AI-controle ontbreekt."
 
+        if raw_meta.get("registration_allowed") is False:
+            rules.append(
+                RuleResult(
+                    rule="registration_allowed",
+                    outcome="fail",
+                    detail="Geen inschrijving mogelijk op het adres (opgeslagen AI-controle).",
+                    score_delta=-100,
+                )
+            )
+            return Decision.IGNORE, rules, f"{summary} AI (opgeslagen): Geen inschrijving op het adres toegestaan; advertentie genegeerd."
+
         unusual = raw_meta.get("unusual_requirements")
         unusual_requirements = unusual if isinstance(unusual, list) else []
+        is_fitting = raw_meta.get("is_fitting")
         needs_review = (
             bool(raw_meta.get("error"))
             or raw_meta.get("needs_review") is not False
+            or is_fitting is False
             or bool(unusual_requirements)
         )
         explanation = raw_meta.get("explanation")
@@ -312,7 +329,7 @@ class Pipeline:
             )
         )
         suitable_for_two = raw_meta.get("suitable_for_two")
-        hard_llm_block = suitable_for_two is False
+        hard_llm_block = suitable_for_two is False or is_fitting is False
         if (hard_llm_block or (needs_review and not fast)) and decision is Decision.AUTO_REACT:
             decision = Decision.REVIEW
         suffix = (
@@ -355,8 +372,22 @@ class Pipeline:
             return decision, rules, f"{summary} {suffix}"
 
         result = run.result
+        if result.registration_allowed is False:
+            rules.append(
+                RuleResult(
+                    rule="registration_allowed",
+                    outcome="fail",
+                    detail="Geen inschrijving mogelijk op het adres (LLM-beoordeling).",
+                    score_delta=-100,
+                )
+            )
+            return Decision.IGNORE, rules, f"{summary} LLM: Geen inschrijving op het adres toegestaan; advertentie genegeerd."
+
         llm_requires_review = (
-            result.needs_review or result.suitable_for_two is not True or bool(result.unusual_requirements)
+            result.needs_review
+            or result.is_fitting is False
+            or result.suitable_for_two is not True
+            or bool(result.unusual_requirements)
         )
         rules.append(
             RuleResult(
@@ -365,7 +396,7 @@ class Pipeline:
                 detail=result.explanation,
             )
         )
-        hard_llm_block = result.suitable_for_two is False
+        hard_llm_block = result.suitable_for_two is False or result.is_fitting is False
         if (hard_llm_block or (llm_requires_review and not fast)) and decision is Decision.AUTO_REACT:
             decision = Decision.REVIEW
         suffix = (

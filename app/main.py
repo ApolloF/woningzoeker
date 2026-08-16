@@ -36,9 +36,9 @@ from app.services.audit import add_audit
 from app.services.interactive_captcha import get_session
 
 reaction_service = pipeline.reaction_service
-ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
-SESSION_SOURCES = {"huurwoningen", "pararius"}
-LOGIN_CHECK_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen"}
+ACCOUNT_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen", "kamernet"}
+SESSION_SOURCES = {"huurwoningen", "pararius", "kamernet"}
+LOGIN_CHECK_SOURCES = {"huurwoningen", "pararius", "woldring", "campus_groningen", "kamernet"}
 SOURCE_MODE_LABELS = {
     SourceMode.MONITOR_ONLY.value: "Alleen volgen",
     SourceMode.DRAFT_ONLY.value: "Concept maken",

@@ -4,6 +4,7 @@ from app.adapters.campus_groningen import CampusGroningenAdapter
 from app.adapters.funda import FundaRentalAdapter
 from app.adapters.gruno import GrunoVastgoedAdapter
 from app.adapters.huurwoningen import HuurwoningenAdapter
+from app.adapters.kamernet import KamernetAdapter
 from app.adapters.maxx import MaxxGroningenAdapter
 from app.adapters.one_two_three_wonen import OneTwoThreeWonenAdapter
 from app.adapters.pandomo import PandomoAdapter
@@ -23,6 +24,7 @@ ALL_ADAPTERS: tuple[type[SourceAdapter], ...] = (
     CampusGroningenAdapter,
     ParariusAdapter,
     FundaRentalAdapter,
+    KamernetAdapter,
 )
 
 __all__ = [
@@ -33,6 +35,7 @@ __all__ = [
     "FundaRentalAdapter",
     "GrunoVastgoedAdapter",
     "HuurwoningenAdapter",
+    "KamernetAdapter",
     "MaxxGroningenAdapter",
     "OneTwoThreeWonenAdapter",
     "PandomoAdapter",

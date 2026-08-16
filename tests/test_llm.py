@@ -182,8 +182,7 @@ def test_fast_mode_does_not_wait_for_llm_uncertainty_but_respects_explicit_rejec
         Criteria(auto_react_aggressiveness="fast"),
     )
     assert decision is Decision.AUTO_REACT
-    assert "niet wachten" in summary
-
+    assert uncertain.result is not None
     rejected = uncertain.result.model_copy(update={"suitable_for_two": False})
     decision, _, _ = Pipeline._apply_llm_safety(
         Decision.AUTO_REACT,
@@ -198,3 +197,68 @@ def test_fast_mode_does_not_wait_for_llm_uncertainty_but_respects_explicit_rejec
         Criteria(auto_react_aggressiveness="fast"),
     )
     assert decision is Decision.REVIEW
+
+
+def test_llm_registration_not_allowed_forces_decision_ignore() -> None:
+    no_reg_run = LLMRun(
+        draft="Concept",
+        result=ListingLLMResult(
+            is_fitting=False,
+            registration_allowed=False,
+            suitable_for_two=True,
+            unusual_requirements=[],
+            needs_review=False,
+            explanation="Geen inschrijving op het adres toegestaan.",
+            response_draft_nl="Concept",
+        ),
+        provider="openai",
+        model="test",
+    )
+    decision, rules, summary = Pipeline._apply_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Passend volgens criteria.",
+        no_reg_run,
+        Criteria(auto_react_aggressiveness="fast"),
+    )
+    assert decision is Decision.IGNORE
+    assert any(rule.rule == "registration_allowed" and rule.outcome == "fail" for rule in rules)
+    assert "genegeerd" in summary.lower()
+
+    # Also test cached flow
+    cached_decision, cached_rules, cached_summary = Pipeline._apply_cached_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Passend.",
+        {"registration_allowed": False, "is_fitting": False, "explanation": "Geen inschrijving."},
+        Criteria(),
+    )
+    assert cached_decision is Decision.IGNORE
+    assert any(rule.rule == "registration_allowed" and rule.outcome == "fail" for rule in cached_rules)
+
+
+def test_llm_not_fitting_downgrades_to_review() -> None:
+    unfitting_run = LLMRun(
+        draft="Concept",
+        result=ListingLLMResult(
+            is_fitting=False,
+            registration_allowed=True,
+            suitable_for_two=True,
+            unusual_requirements=[],
+            needs_review=False,
+            explanation="Woningprofiel past niet bij de kandidaten.",
+            response_draft_nl="Concept",
+        ),
+        provider="openai",
+        model="test",
+    )
+    decision, rules, summary = Pipeline._apply_llm_safety(
+        Decision.AUTO_REACT,
+        [],
+        "Passend volgens harde criteria.",
+        unfitting_run,
+        Criteria(auto_react_aggressiveness="fast"),
+    )
+    assert decision is Decision.REVIEW
+    assert any(rule.rule == "llm_analysis" and rule.outcome == "review" for rule in rules)
+

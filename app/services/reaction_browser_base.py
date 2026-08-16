@@ -99,6 +99,19 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     "bulten_vastgoed": ReactionSpec(
         form_selectors=("form:has(textarea):has(button[type='submit'])",),
     ),
+    "kamernet": ReactionSpec(
+        account_required=True,
+        login_url="https://kamernet.nl/nl/inloggen",
+        action_href_parts=("/reageer/", "/contact/", "#contact-form", "#reply-form"),
+        form_selectors=(
+            "form#reply-form",
+            "form.reply-form",
+            "form[action*='message']",
+            "form[action*='react']",
+            "form:has(textarea):has(button[type='submit'])",
+            "form:has(textarea):visible",
+        ),
+    ),
 }
 
 
@@ -545,6 +558,11 @@ class ReactionBrowser:
             return
         action_btn = page.locator(
             "button:has-text('Stel een vraag'), a:has-text('Stel een vraag'), "
+            "button:has-text('Reageer direct'), a:has-text('Reageer direct'), "
+            "button:has-text('Direct reageren'), a:has-text('Direct reageren'), "
+            "button:has-text('Stuur bericht'), a:has-text('Stuur bericht'), "
+            "button:has-text('Bericht sturen'), a:has-text('Bericht sturen'), "
+            "button:has-text('Contact opnemen'), a:has-text('Contact opnemen'), "
             "button:has-text('Reageer'), a:has-text('Reageer op deze woning'), "
             "a.button:has-text('Contact'), button:has-text('Contact'), a.listing-detail-summary__action"
         ).first

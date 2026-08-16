@@ -131,6 +131,7 @@ def test_supported_source_specs_cover_all_adapters() -> None:
         "funda_rentals",
         "gruno_vastgoed",
         "huurwoningen",
+        "kamernet",
         "maxx_groningen",
         "pandomo",
         "pararius",

@@ -14,6 +14,18 @@ class RuleEngine:
         r"(?:één|1)\s+persoons?(?:woning|huishouden)",
         re.I,
     )
+    NO_REGISTRATION_PATTERN = re.compile(
+        r"(?:geen|zonder)\s+(?:mogelijkheid\s+tot\s+)?(?:adres)?(?:in)?schrijv(?:ing|en)|"
+        r"(?:in)?schrijv(?:ing|en)(?:\s+(?:is|bij\s+de\s+gemeente|op\s+dit\s+adres))?\s+(?:is\s+)?(?:niet|geen)\s+(?:mogelijk|toegestaan|toegestane|optie)|"
+        r"niet\s+(?:mogelijk|toegestaan)\s+(?:om\s+)?(?:je\s+|in\s+)?(?:te\s+)?(?:in\s*)?schrijv(?:en|ing)|"
+        r"(?:geen|zonder)\s+(?:mogelijkheid\s+tot\s+)?(?:adres)?registratie|"
+        r"(?:adres)?registratie\s+(?:\w+\s+){0,3}?(?:is\s+)?(?:niet|geen)\s+(?:mogelijk|toegestaan|toegestane|optie)|"
+        r"(?:no|without)\s+(?:municipal\s+|address\s+)?registration|"
+        r"registration\s+(?:\w+\s+){0,3}?(?:is\s+)?(?:not|no)\s+(?:possible|allowed|permitted)|"
+        r"not\s+possible\s+to\s+register|"
+        r"cannot\s+register",
+        re.I,
+    )
     AMBIGUOUS_REQUIREMENT_PATTERN = re.compile(
         r"(jaarrekening|creditcheck|id-check|"
         r"expats?\s+(?:only|uitsluitend)|short[- ]?stay|tijdelijk contract|diplomatenclausule|"
@@ -35,6 +47,8 @@ class RuleEngine:
         score = 50
         rules: list[RuleResult] = []
         description = listing.description or ""
+        card_text = str(listing.raw_data.get("card_text") or "") if isinstance(listing.raw_data, dict) else ""
+        full_text = f"{listing.title} {description} {card_text}"
         age_minutes: int | None = None
 
         if not listing.is_available:
@@ -59,6 +73,8 @@ class RuleEngine:
                     detail=f"Ongeveer {age_minutes} minuten oud",
                 )
             )
+        if self.NO_REGISTRATION_PATTERN.search(full_text):
+            return self._ignored("registration_not_allowed", "Geen inschrijving op het adres toegestaan.")
         if criteria.suitable_for_two_required and self.ONE_PERSON_PATTERN.search(description):
             return self._ignored("household_size", "Advertentie staat expliciet slechts één persoon toe.")
         if not criteria.allow_home_swap and "woningruil" in description.lower():

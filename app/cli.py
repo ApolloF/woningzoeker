@@ -79,7 +79,7 @@ def main() -> None:
     subcommands = parser.add_subparsers(dest="command", required=True)
     subcommands.add_parser("generate-secrets")
     connect = subcommands.add_parser("connect-source")
-    connect.add_argument("source", choices=["huurwoningen", "pararius"])
+    connect.add_argument("source", choices=["huurwoningen", "pararius", "kamernet"])
     connect.add_argument(
         "--output",
         type=Path,
