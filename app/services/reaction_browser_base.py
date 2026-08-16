@@ -743,15 +743,24 @@ class ReactionBrowser:
                 if isinstance(label_text, str):
                     descriptor = f"{descriptor} {label_text}"
             checkbox_action = self._legal_checkbox_action(descriptor, accept_legal_confirmations)
+            is_required = bool(
+                checkbox.get_attribute("required") is not None
+                or checkbox.get_attribute("aria-required") == "true"
+                or checkbox.get_attribute("data-val-booleanrequired") is not None
+            )
+            is_checked = checkbox.is_checked()
+
             if checkbox_action == "accept":
-                if checkbox.is_visible() and not checkbox.is_disabled() and not checkbox.is_checked():
+                if checkbox.is_visible() and not checkbox.is_disabled() and not is_checked:
                     checkbox.check()
                 continue
             if checkbox_action == "review":
-                return (
-                    "LEGAL_CONFIRMATION_REQUIRED",
-                    "Het formulier vraagt om een voorwaarden-, privacy- of andere persoonlijke verklaring.",
-                )
+                if is_required or is_checked:
+                    return (
+                        "LEGAL_CONFIRMATION_REQUIRED",
+                        "Het formulier vraagt om een voorwaarden-, privacy- of andere persoonlijke verklaring.",
+                    )
+                continue
         return None
 
     def _fill_form(
