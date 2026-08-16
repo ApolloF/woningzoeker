@@ -521,8 +521,16 @@ class ReactionBrowser:
                     link.click(force=True)
                 with contextlib.suppress(Exception):
                     page.evaluate(
-                        "(selector) => { const el = document.querySelector(selector); if (el) el.click(); }",
-                        f"a[href*='{part}']",
+                        """(part) => {
+                            const els = document.querySelectorAll(`a[href*="${part}"], button[data-target*="${part}"], [data-bs-target*="${part}"]`);
+                            for (const el of els) {
+                                if (el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0) {
+                                    el.click();
+                                }
+                            }
+                            if (els.length > 0) els[els.length - 1].click();
+                        }""",
+                        part,
                     )
                 page.wait_for_timeout(1000)
             else:
