@@ -42,13 +42,22 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
         account_required=True,
         login_url="https://www.huurwoningen.nl/account/inloggen/",
         action_href_parts=("/reageer/",),
-        form_selectors=("form:has(textarea):has(button[type='submit'])",),
+        form_selectors=(
+            "form.form--external_listing_contact_form",
+            "form[action*='/reageer/']",
+            "form:has(textarea):has(button[type='submit'])",
+        ),
     ),
     "pararius": ReactionSpec(
         account_required=True,
         login_url="https://www.pararius.nl/inloggen",
-        action_href_parts=("/contact/",),
-        form_selectors=("form:has(textarea):has(button[type='submit'])",),
+        action_href_parts=("/contact/", "/reageer/"),
+        form_selectors=(
+            "form.form--external_listing_contact_form",
+            "form[action*='/contact/']",
+            "form[action*='/reageer/']",
+            "form:has(textarea):has(button[type='submit'])",
+        ),
     ),
     "woldring": ReactionSpec(
         account_required=True,
@@ -447,11 +456,19 @@ class ReactionBrowser:
             if not link.count():
                 continue
             href = link.get_attribute("href") or ""
-            if href.startswith("#"):
+            if href.startswith("#") or not href:
                 link.click()
             else:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             return
+        action_btn = page.locator(
+            "button:has-text('Reageer'), a:has-text('Reageer op deze woning'), "
+            "button:has-text('Contact'), a.listing-detail-summary__action"
+        ).first
+        if action_btn.count() and action_btn.is_visible():
+            with contextlib.suppress(Exception):
+                action_btn.click()
+                page.wait_for_timeout(1000)
 
     @staticmethod
     def _has_auth_challenge(page: Page) -> bool:
@@ -798,7 +815,7 @@ class ReactionBrowser:
             control.fill(val)
             filled.append(descriptor[:120] or key)
         if "message" not in {self._field_key(name, "text", "") for name in filled}:  # noqa: SIM102
-            if form.locator("textarea:visible").count() == 0:
+            if form.locator("textarea:visible").count() > 0:
                 return self._review("MESSAGE_FIELD_MISSING", "Geen berichtveld gevonden.")
         return sorted(set(filled))
 
