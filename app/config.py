@@ -55,8 +55,13 @@ class Settings(BaseSettings):
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
     def parse_user_ids(cls, value: object) -> object:
+        if isinstance(value, int):
+            return [value]
         if isinstance(value, str):
-            return [int(item.strip()) for item in value.split(",") if item.strip()]
+            cleaned = value.strip().strip("[]()")
+            return [int(item.strip()) for item in cleaned.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [int(item) for item in value]
         return value
 
     @field_validator("llm_provider")

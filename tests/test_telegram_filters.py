@@ -30,3 +30,15 @@ def test_telegram_filter_supports_fit_score_combinations_and_off() -> None:
         auto_low, Criteria(telegram_listing_filter="auto_react_or_score", telegram_min_score=80)
     )
     assert not TelegramNotifier._listing_matches_filter(review_high, Criteria(telegram_listing_filter="off"))
+
+
+def test_telegram_allowed_user_ids_parsing() -> None:
+    from app.config import Settings
+
+    assert Settings.parse_user_ids(1576842586) == [1576842586]
+    assert Settings.parse_user_ids("1576842586") == [1576842586]
+    assert Settings.parse_user_ids("[1576842586]") == [1576842586]
+    assert Settings.parse_user_ids("1576842586, 987654321") == [1576842586, 987654321]
+    assert Settings.parse_user_ids("[1576842586, 987654321]") == [1576842586, 987654321]
+    assert Settings.parse_user_ids([1576842586, 987654321]) == [1576842586, 987654321]
+
