@@ -746,17 +746,20 @@ class ReactionBrowser:
     def _find_form(self, page: Page, spec: ReactionSpec) -> Locator | None:
         for selector in spec.form_selectors:
             form = page.locator(selector).first
-            if form.count() and form.is_visible():
-                return form
+            if form.count():
+                with contextlib.suppress(Exception):
+                    form.wait_for(state="visible", timeout=2000)
+                if form.is_visible():
+                    return form
         forms = page.locator("form")
         for index in range(forms.count()):
             form = forms.nth(index)
             if not form.is_visible():
                 continue
             has_message = form.locator("textarea:visible").count() > 0
-            has_email = form.locator("input[type='email']:visible").count() > 0
-            has_submit = form.locator("button[type='submit'], input[type='submit']").count() > 0
-            if has_message and has_email and has_submit:
+            has_email = form.locator("input[type='email']:visible, input[name*='email' i]:visible").count() > 0
+            has_submit = form.locator("button[type='submit'], input[type='submit'], button[id*='submit']").count() > 0
+            if (has_message or form.locator("input:visible").count() >= 2) and has_submit:
                 return form
         return None
 
