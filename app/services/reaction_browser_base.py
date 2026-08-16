@@ -123,6 +123,28 @@ class ReactionBrowser:
         self.settings = settings
         self.captcha_solver = captcha_solver or CaptchaSolver(self.settings)
 
+    _default_user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    )
+
+    def _browser_launch_args(self) -> dict[str, Any]:
+        args: dict[str, Any] = {
+            "headless": True,
+            "args": [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-position=0,0",
+                "--ignore-certificate-errors",
+                "--ignore-certificate-errors-spki-list",
+            ],
+        }
+        if self.settings.chromium_executable_path:
+            args["executable_path"] = self.settings.chromium_executable_path
+        return args
+
     def check_login(
         self,
         source_name: str,
@@ -140,18 +162,17 @@ class ReactionBrowser:
             return LoginCheckResult(False, "CREDENTIALS_MISSING", "Inloggegevens ontbreken.")
 
         with sync_playwright() as playwright:
-            launch_args: dict[str, Any] = {"headless": True}
-            if self.settings.chromium_executable_path:
-                launch_args["executable_path"] = self.settings.chromium_executable_path
-            browser = playwright.chromium.launch(**launch_args)
+            browser = playwright.chromium.launch(**self._browser_launch_args())
             context_args: dict[str, Any] = {
-                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT},
+                "user_agent": self._default_user_agent,
             }
             if credential.storage_state:
                 context_args["storage_state"] = credential.storage_state
             context = browser.new_context(**context_args)
             context.set_default_timeout(self.settings.reaction_browser_timeout_seconds * 1000)
             page = context.new_page()
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             try:
                 failure = self._ensure_login(
                     page,
@@ -213,18 +234,17 @@ class ReactionBrowser:
         )
 
         with sync_playwright() as playwright:
-            launch_args: dict[str, Any] = {"headless": True}
-            if self.settings.chromium_executable_path:
-                launch_args["executable_path"] = self.settings.chromium_executable_path
-            browser = playwright.chromium.launch(**launch_args)
+            browser = playwright.chromium.launch(**self._browser_launch_args())
             context_args: dict[str, Any] = {
-                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT},
+                "user_agent": self._default_user_agent,
             }
             if credential and credential.storage_state:
                 context_args["storage_state"] = credential.storage_state
             context = browser.new_context(**context_args)
             context.set_default_timeout(self.settings.reaction_browser_timeout_seconds * 1000)
             page = context.new_page()
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             try:
                 login_result = self._ensure_login(
                     page, context, spec, listing_url, credential, source_name, challenge_meta
