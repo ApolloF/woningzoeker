@@ -515,7 +515,12 @@ class ReactionBrowser:
             if href.startswith("#") or not href:
                 with contextlib.suppress(Exception):
                     link.click(force=True)
-                    page.wait_for_timeout(1000)
+                with contextlib.suppress(Exception):
+                    page.evaluate(
+                        "(selector) => { const el = document.querySelector(selector); if (el) el.click(); }",
+                        f"a[href*='{part}']",
+                    )
+                page.wait_for_timeout(1000)
             else:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             return
