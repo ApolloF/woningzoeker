@@ -256,7 +256,13 @@ class ReactionService:
         with SessionLocal() as db:
             return db.get(PrivateContact, 1) is not None
 
-    def dispatch(self, listing_id: int, *, force: bool = False) -> DispatchResult:
+    def dispatch(
+        self,
+        listing_id: int,
+        *,
+        force: bool = False,
+        accept_legal_confirmations: bool | None = None,
+    ) -> DispatchResult:
         with SessionLocal() as db:
             listing = db.get(Listing, listing_id)
             if listing is None:
@@ -335,7 +341,8 @@ class ReactionService:
             source_name = source.name
             source_display = source.display_name
             source_id = source.id
-            accept_legal_confirmations = criteria.auto_accept_legal_confirmations
+            if accept_legal_confirmations is None:
+                accept_legal_confirmations = criteria.auto_accept_legal_confirmations
 
         try:
             contact = self._load_contact()

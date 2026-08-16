@@ -53,6 +53,7 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
         login_url="https://www.pararius.nl/inloggen",
         action_href_parts=("/contact/", "/reageer/"),
         form_selectors=(
+            "form.form--contact-agent-huurprofiel",
             "form.form--external_listing_contact_form",
             "form[action*='/contact/']",
             "form[action*='/reageer/']",
@@ -113,12 +114,13 @@ class ReactionBrowser:
     """Conservative browser automation: fill known fields and stop on ambiguity."""
 
     _legal_checkbox = re.compile(
-        r"agree|agreement|terms|condition|privacy|accept|toestemming|akkoord|voorwaarden",
+        r"agree|agreement|terms|condition|privacy|accept|toestemming|akkoord|voorwaarden|"
+        r"verklaring|consent|avg|waarheid|truth|correct ingevuld|juist ingevuld|data.?sharing|leeftijd|age",
         re.I,
     )
     _sensitive_checkbox = re.compile(
         r"marketing|nieuwsbrief|newsletter|commercial|reclame|betaling|payment|kosten|cost|"
-        r"identiteit|identity|leeftijd|age|waarheid|truth|correct ingevuld|data.?sharing",
+        r"identiteit|identity|document|upload|paspoort|passport|id.?kaart|loonstrook|payslip",
         re.I,
     )
     _sensitive_field = re.compile(
@@ -293,6 +295,21 @@ class ReactionBrowser:
 
                 form = self._find_form(page, spec)
                 if form is None:
+                    body_text = page.locator("body").inner_text().lower()
+                    if any(
+                        arch in body_text
+                        for arch in (
+                            "advertentie gearchiveerd",
+                            "niet meer beschikbaar",
+                            "woning is verhuurd",
+                            "deze woning is verhuurd",
+                            "verhuurd onder voorbehoud",
+                        )
+                    ):
+                        return self._with_storage(
+                            context,
+                            self._review("LISTING_ARCHIVED", "Deze woning is inmiddels verhuurd of gearchiveerd op de bronsite."),
+                        )
                     return self._with_storage(
                         context,
                         self._review("FORM_NOT_FOUND", "Geen veilig herkenbaar reactieformulier gevonden."),
@@ -427,6 +444,18 @@ class ReactionBrowser:
             page.wait_for_load_state("networkidle", timeout=10_000)
         with contextlib.suppress(TimeoutError):
             password.wait_for(state="hidden", timeout=10_000)
+        current_url = getattr(page, "url", "") or ""
+        body_text = ""
+        with contextlib.suppress(Exception):
+            body_text = page.locator("body").inner_text().lower()
+        if "/shop/" in current_url or "wordt lid voor" in body_text:
+            return self._with_storage(
+                context,
+                self._review(
+                    "MEMBERSHIP_REQUIRED",
+                    "Dit account heeft geen actief betaald lidmaatschap bij Campus Groningen (€29,50/jaar vereist).",
+                ),
+            )
         if self._has_auth_challenge(page):
             return self._with_storage(
                 context,
@@ -452,18 +481,22 @@ class ReactionBrowser:
     @staticmethod
     def _follow_action(page: Page, spec: ReactionSpec) -> None:
         for part in spec.action_href_parts:
-            link = page.locator(f"a[href*='{part}']").first
+            link = page.locator(f"a[href*='{part}']:visible").first
+            if not link.count():
+                link = page.locator(f"a[href*='{part}']").first
             if not link.count():
                 continue
             href = link.get_attribute("href") or ""
             if href.startswith("#") or not href:
-                link.click()
+                with contextlib.suppress(Exception):
+                    link.click()
+                    page.wait_for_timeout(1000)
             else:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             return
         action_btn = page.locator(
             "button:has-text('Reageer'), a:has-text('Reageer op deze woning'), "
-            "button:has-text('Contact'), a.listing-detail-summary__action"
+            "a.button:has-text('Contact'), button:has-text('Contact'), a.listing-detail-summary__action"
         ).first
         if action_btn.count() and action_btn.is_visible():
             with contextlib.suppress(Exception):
@@ -800,12 +833,32 @@ class ReactionBrowser:
                 )
             ).lower()
             if self._sensitive_field.search(descriptor):
+                val_present = ""
+                with contextlib.suppress(Exception):
+                    val_present = (
+                        control.input_value()
+                        if control.evaluate("el => 'value' in el")
+                        else (control.inner_text() or "")
+                    ).strip()
+                if val_present:
+                    filled.append(descriptor[:120])
+                    continue
                 return self._review(
                     "SENSITIVE_FIELD_REQUIRED",
                     "Het formulier vraagt om aanvullende gevoelige gegevens.",
                 )
             key = self._field_key(descriptor, control_type, control.evaluate("el => el.tagName"))
             if key is None:
+                val_present = ""
+                with contextlib.suppress(Exception):
+                    val_present = (
+                        control.input_value()
+                        if control.evaluate("el => 'value' in el")
+                        else (control.inner_text() or "")
+                    ).strip()
+                if val_present:
+                    filled.append(descriptor[:120])
+                    continue
                 required = control.get_attribute("required") is not None or (
                     control.get_attribute("aria-required") == "true"
                 )

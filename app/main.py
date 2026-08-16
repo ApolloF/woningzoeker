@@ -325,12 +325,18 @@ def retry_assistance(
     background_tasks: BackgroundTasks,
     csrf_token: Annotated[str, Form()],
     db: Annotated[Session, Depends(get_db)],
+    accept_legal: Annotated[bool, Form()] = False,
 ) -> Response:
     auth.verify_csrf(request, csrf_token)
     assistance = db.get(AssistanceRequest, assistance_id)
     if assistance is None or assistance.state != AssistanceState.OPEN.value:
         raise HTTPException(status_code=404, detail="open assistance request not found")
-    background_tasks.add_task(reaction_service.dispatch, assistance.listing_id, force=True)
+    background_tasks.add_task(
+        reaction_service.dispatch,
+        assistance.listing_id,
+        force=True,
+        accept_legal_confirmations=accept_legal or None,
+    )
     return RedirectResponse("/assistance", status_code=303)
 
 
