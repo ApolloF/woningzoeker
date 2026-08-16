@@ -297,23 +297,6 @@ class ReactionBrowser:
                     )
                 self._follow_action(page, spec)
                 self._dismiss_cookie_banner(page)
-                if (
-                    self._has_challenge(page)
-                    and not self.solve_page_challenge(page)
-                    and not self._human_solve_challenge(page, challenge_meta)
-                ):
-                    return self._with_storage(
-                        context,
-                        self._review(
-                            "CAPTCHA_REQUIRED",
-                            "De site vraagt om een menselijke CAPTCHA-controle.",
-                        ),
-                    )
-                if page.locator("input[type='password']").count():
-                    return self._with_storage(
-                        context,
-                        self._review("LOGIN_REQUIRED", "De sitesessie is niet ingelogd."),
-                    )
 
                 form = self._find_form(page, spec)
                 if form is None and spec.action_href_parts:
@@ -352,6 +335,13 @@ class ReactionBrowser:
                         context,
                         self._review("FORM_NOT_FOUND", "Geen veilig herkenbaar reactieformulier gevonden."),
                     )
+
+                if spec.account_required and page.locator("input[type='password']:visible").count():
+                    return self._with_storage(
+                        context,
+                        self._review("LOGIN_REQUIRED", "De sitesessie is niet ingelogd."),
+                    )
+
                 blocker = self._form_blocker(form, accept_legal_confirmations)
                 if blocker:
                     return self._with_storage(context, self._review(*blocker))
@@ -360,6 +350,20 @@ class ReactionBrowser:
                 if isinstance(fill_result, BrowserReactionResult):
                     return self._with_storage(context, fill_result)
                 field_names = fill_result
+
+                if (
+                    self._has_challenge(page)
+                    and not self.solve_page_challenge(page)
+                    and not self._human_solve_challenge(page, challenge_meta)
+                ):
+                    return self._with_storage(
+                        context,
+                        self._review(
+                            "CAPTCHA_REQUIRED",
+                            "De site vraagt om een menselijke CAPTCHA-controle.",
+                        ),
+                    )
+
                 page.screenshot(path=str(before_path), full_page=True)
                 if not allow_submit:
                     return self._with_storage(
