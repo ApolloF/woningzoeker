@@ -13,6 +13,13 @@ from playwright.sync_api import BrowserContext, Locator, Page, TimeoutError, syn
 from app.config import Settings
 from app.models import SubmissionState
 from app.schemas import PrivateContactData, SourceCredentialData
+from app.services.captcha_solver import CaptchaSolver
+from app.services.interactive_captcha import (
+    VIEWPORT_HEIGHT,
+    VIEWPORT_WIDTH,
+    SessionMeta,
+    solve_interactively,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +117,11 @@ class ReactionBrowser:
         re.I,
     )
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self, settings: Settings, captcha_solver: CaptchaSolver | None = None
+    ) -> None:
         self.settings = settings
+        self.captcha_solver = captcha_solver or CaptchaSolver(self.settings)
 
     def check_login(
         self,
@@ -134,7 +144,9 @@ class ReactionBrowser:
             if self.settings.chromium_executable_path:
                 launch_args["executable_path"] = self.settings.chromium_executable_path
             browser = playwright.chromium.launch(**launch_args)
-            context_args: dict[str, Any] = {}
+            context_args: dict[str, Any] = {
+                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+            }
             if credential.storage_state:
                 context_args["storage_state"] = credential.storage_state
             context = browser.new_context(**context_args)
@@ -183,6 +195,8 @@ class ReactionBrowser:
         submission_id: int,
         allow_submit: bool,
         accept_legal_confirmations: bool = False,
+        listing_title: str = "",
+        source_display: str = "",
     ) -> BrowserReactionResult:
         spec = REACTION_SPECS.get(source_name)
         if spec is None:
@@ -191,20 +205,30 @@ class ReactionBrowser:
         artifact_dir.mkdir(parents=True, exist_ok=True)
         before_path = artifact_dir / "before-submit.png"
         after_path = artifact_dir / "after-submit.png"
+        challenge_meta = SessionMeta(
+            submission_id=submission_id,
+            listing_title=listing_title,
+            listing_url=listing_url,
+            source_display=source_display or source_name,
+        )
 
         with sync_playwright() as playwright:
             launch_args: dict[str, Any] = {"headless": True}
             if self.settings.chromium_executable_path:
                 launch_args["executable_path"] = self.settings.chromium_executable_path
             browser = playwright.chromium.launch(**launch_args)
-            context_args: dict[str, Any] = {}
+            context_args: dict[str, Any] = {
+                "viewport": {"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
+            }
             if credential and credential.storage_state:
                 context_args["storage_state"] = credential.storage_state
             context = browser.new_context(**context_args)
             context.set_default_timeout(self.settings.reaction_browser_timeout_seconds * 1000)
             page = context.new_page()
             try:
-                login_result = self._ensure_login(page, context, spec, listing_url, credential, source_name)
+                login_result = self._ensure_login(
+                    page, context, spec, listing_url, credential, source_name, challenge_meta
+                )
                 if login_result is not None:
                     return login_result
 
@@ -221,13 +245,16 @@ class ReactionBrowser:
                 self._follow_action(page, spec)
                 self._dismiss_cookie_banner(page)
                 if self._has_challenge(page):
-                    return self._with_storage(
-                        context,
-                        self._review(
-                            "CAPTCHA_REQUIRED",
-                            "De site vraagt om een menselijke CAPTCHA-controle.",
-                        ),
-                    )
+                    if not self.solve_page_challenge(page) and not self._human_solve_challenge(
+                        page, challenge_meta
+                    ):
+                        return self._with_storage(
+                            context,
+                            self._review(
+                                "CAPTCHA_REQUIRED",
+                                "De site vraagt om een menselijke CAPTCHA-controle.",
+                            ),
+                        )
                 if page.locator("input[type='password']").count():
                     return self._with_storage(
                         context,
@@ -311,6 +338,7 @@ class ReactionBrowser:
         listing_url: str,
         credential: SourceCredentialData | None,
         source_name: str,
+        challenge_meta: SessionMeta | None = None,
     ) -> BrowserReactionResult | None:
         if not spec.account_required:
             return None
@@ -328,10 +356,13 @@ class ReactionBrowser:
                 self._review("REAUTHENTICATION_REQUIRED", "De site vraagt om extra inlogverificatie."),
             )
         if self._has_challenge(page):
-            return self._with_storage(
-                context,
-                self._review("CAPTCHA_REQUIRED", "Inloggen vereist een menselijke CAPTCHA-controle."),
-            )
+            if not self.solve_page_challenge(page) and not self._human_solve_challenge(
+                page, challenge_meta
+            ):
+                return self._with_storage(
+                    context,
+                    self._review("CAPTCHA_REQUIRED", "Inloggen vereist een menselijke CAPTCHA-controle."),
+                )
         if not credential.username or not credential.password:
             return self._with_storage(
                 context,
@@ -419,6 +450,135 @@ class ReactionBrowser:
             "[data-sitekey]",
         )
         return any(page.locator(selector).count() for selector in selectors)
+
+    def solve_page_challenge(self, page: Page) -> bool:
+        if not self.captcha_solver.is_enabled():
+            return False
+
+        try:
+            # 1. reCAPTCHA v2 / v3
+            recaptcha_frame = page.locator("iframe[src*='recaptcha']").first
+            recaptcha_el = page.locator(".g-recaptcha, [data-sitekey]").first
+            sitekey = None
+            if recaptcha_el.count() and recaptcha_el.get_attribute("data-sitekey"):
+                sitekey = recaptcha_el.get_attribute("data-sitekey")
+            elif recaptcha_frame.count():
+                src = recaptcha_frame.get_attribute("src") or ""
+                match = re.search(r"[?&](?:k|sitekey)=([^&]+)", src)
+                if match:
+                    sitekey = match.group(1)
+
+            if sitekey:
+                s_data = recaptcha_el.get_attribute("data-s") if recaptcha_el.count() else None
+                token = self.captcha_solver.solve_recaptcha_v2(page.url, sitekey, s_data=s_data)
+                if token:
+                    self._inject_captcha_token(page, token, field_names=["g-recaptcha-response"])
+                    with contextlib.suppress(Exception):
+                        page.wait_for_timeout(1000)
+                    if not self._has_challenge(page):
+                        return True
+
+            # 2. hCaptcha
+            hcaptcha_frame = page.locator("iframe[src*='hcaptcha']").first
+            hcaptcha_el = page.locator(".h-captcha[data-sitekey]").first
+            h_sitekey = None
+            if hcaptcha_el.count() and hcaptcha_el.get_attribute("data-sitekey"):
+                h_sitekey = hcaptcha_el.get_attribute("data-sitekey")
+            elif hcaptcha_frame.count():
+                src = hcaptcha_frame.get_attribute("src") or ""
+                match = re.search(r"[?&](?:sitekey|k)=([^&]+)", src)
+                if match:
+                    h_sitekey = match.group(1)
+
+            if h_sitekey:
+                token = self.captcha_solver.solve_hcaptcha(page.url, h_sitekey)
+                if token:
+                    self._inject_captcha_token(
+                        page, token, field_names=["h-captcha-response", "g-recaptcha-response"]
+                    )
+                    with contextlib.suppress(Exception):
+                        page.wait_for_timeout(1000)
+                    if not self._has_challenge(page):
+                        return True
+
+            # 3. Turnstile
+            turnstile_frame = page.locator("iframe[src*='turnstile']").first
+            turnstile_el = page.locator(".cf-turnstile[data-sitekey]").first
+            t_sitekey = None
+            if turnstile_el.count() and turnstile_el.get_attribute("data-sitekey"):
+                t_sitekey = turnstile_el.get_attribute("data-sitekey")
+            elif turnstile_frame.count():
+                src = turnstile_frame.get_attribute("src") or ""
+                match = re.search(r"[?&](?:sitekey|k)=([^&]+)", src)
+                if match:
+                    t_sitekey = match.group(1)
+
+            if t_sitekey:
+                token = self.captcha_solver.solve_turnstile(page.url, t_sitekey)
+                if token:
+                    self._inject_captcha_token(
+                        page, token, field_names=["cf-turnstile-response", "g-recaptcha-response"]
+                    )
+                    with contextlib.suppress(Exception):
+                        page.wait_for_timeout(1000)
+                    if not self._has_challenge(page):
+                        return True
+
+            # 4. Image CAPTCHA
+            captcha_img = page.locator("img[src*='captcha' i], img[id*='captcha' i]").first
+            captcha_input = page.locator(
+                "input[name*='captcha' i], input[id*='captcha' i]"
+            ).first
+            if captcha_img.count() and captcha_input.count() and captcha_img.is_visible():
+                import base64
+
+                img_bytes = captcha_img.screenshot(type="png")
+                img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                solved_text = self.captcha_solver.solve_image_captcha(img_b64)
+                if solved_text:
+                    captcha_input.fill(solved_text)
+                    with contextlib.suppress(Exception):
+                        page.wait_for_timeout(1000)
+                    if not self._has_challenge(page):
+                        return True
+        except Exception:
+            logger.exception("Error while solving page captcha challenge")
+
+        return False
+
+    @staticmethod
+    def _inject_captcha_token(page: Page, token: str, field_names: list[str]) -> None:
+        page.evaluate(
+            """({ token, fieldNames }) => {
+                for (const name of fieldNames) {
+                    let elems = document.querySelectorAll(`[name="${name}"], [id="${name}"]`);
+                    if (!elems.length) {
+                        const textarea = document.createElement("textarea");
+                        textarea.name = name;
+                        textarea.id = name;
+                        textarea.style.display = "none";
+                        document.body.appendChild(textarea);
+                        elems = [textarea];
+                    }
+                    elems.forEach(el => {
+                        el.value = token;
+                        el.dispatchEvent(new Event("input", { bubbles: true }));
+                        el.dispatchEvent(new Event("change", { bubbles: true }));
+                    });
+                }
+                if (window.___grecaptcha_cfg && window.___grecaptcha_cfg.clients) {
+                    for (const cid in window.___grecaptcha_cfg.clients) {
+                        const client = window.___grecaptcha_cfg.clients[cid];
+                        for (const k in client) {
+                            if (client[k] && typeof client[k].callback === 'function') {
+                                try { client[k].callback(token); } catch (e) {}
+                            }
+                        }
+                    }
+                }
+            }""",
+            {"token": token, "fieldNames": field_names},
+        )
 
     def _find_form(self, page: Page, spec: ReactionSpec) -> Locator | None:
         for selector in spec.form_selectors:

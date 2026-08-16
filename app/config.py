@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     reaction_artifact_dir: str = "/app/artifacts/submissions"
     reaction_max_attempts: int = Field(default=3, ge=1, le=5)
 
+    # Human-in-the-loop CAPTCHA solving. When enabled, a detected CAPTCHA during an
+    # auto-reaction keeps the browser session alive and relays the live page to the
+    # dashboard so a human can solve only the challenge; automation then resumes and
+    # finishes the reaction. Never used to bypass bot-detection autonomously.
+    captcha_interactive_enabled: bool = False
+    captcha_solve_timeout_seconds: int = Field(default=180, ge=30, le=600)
+
     llm_provider: str = "disabled"
     llm_cheap_model: str = ""
     llm_standard_model: str = ""
@@ -39,6 +46,11 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     anthropic_api_key: str = ""
     anthropic_base_url: str = "https://api.anthropic.com/v1"
+
+    captcha_solver_provider: str = "disabled"
+    capsolver_api_key: str = ""
+    anti_captcha_api_key: str = ""
+    captcha_solver_timeout_seconds: int = Field(default=120, ge=10, le=300)
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
@@ -55,12 +67,24 @@ class Settings(BaseSettings):
             raise ValueError("LLM_PROVIDER must be disabled, openai, or anthropic")
         return normalized
 
+    @field_validator("captcha_solver_provider")
+    @classmethod
+    def supported_captcha_solver_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"disabled", "capsolver", "anti_captcha", "anticaptcha"}:
+            raise ValueError("CAPTCHA_SOLVER_PROVIDER must be disabled, capsolver, or anti_captcha")
+        return "anti_captcha" if normalized == "anticaptcha" else normalized
+
     @model_validator(mode="after")
     def validate_configuration(self) -> Settings:
         if self.llm_provider == "openai" and not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai")
         if self.llm_provider == "anthropic" and not self.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic")
+        if self.captcha_solver_provider == "capsolver" and not self.capsolver_api_key:
+            raise ValueError("CAPSOLVER_API_KEY is required when CAPTCHA_SOLVER_PROVIDER=capsolver")
+        if self.captcha_solver_provider == "anti_captcha" and not self.anti_captcha_api_key:
+            raise ValueError("ANTI_CAPTCHA_API_KEY is required when CAPTCHA_SOLVER_PROVIDER=anti_captcha")
         if self.auto_react_enabled and not self.master_encryption_key:
             raise ValueError("MASTER_ENCRYPTION_KEY is required when AUTO_REACT_ENABLED=true")
         if self.app_env.lower() == "production":

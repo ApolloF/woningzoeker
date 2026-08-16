@@ -304,3 +304,97 @@ def test_login_check_persists_verified_status(monkeypatch: Any) -> None:
         assert credential is not None
         assert credential.last_verified_at is not None
         assert credential.last_error is None
+
+
+class FakeCaptchaSolver:
+    def __init__(self, token: str | None = None) -> None:
+        self.token = token
+        self.solved_calls: list[dict[str, Any]] = []
+
+    def is_enabled(self) -> bool:
+        return self.token is not None
+
+    def solve_recaptcha_v2(self, url: str, sitekey: str, s_data: str | None = None) -> str | None:
+        self.solved_calls.append({"type": "v2", "url": url, "sitekey": sitekey, "s_data": s_data})
+        return self.token
+
+    def solve_recaptcha_v3(self, url: str, sitekey: str, page_action: str | None = None) -> str | None:
+        self.solved_calls.append({"type": "v3", "url": url, "sitekey": sitekey})
+        return self.token
+
+    def solve_hcaptcha(self, url: str, sitekey: str) -> str | None:
+        self.solved_calls.append({"type": "hcaptcha", "url": url, "sitekey": sitekey})
+        return self.token
+
+    def solve_turnstile(self, url: str, sitekey: str) -> str | None:
+        self.solved_calls.append({"type": "turnstile", "url": url, "sitekey": sitekey})
+        return self.token
+
+    def solve_image_captcha(self, image_base64: str) -> str | None:
+        self.solved_calls.append({"type": "image", "b64": image_base64})
+        return self.token
+
+
+class FakeElement:
+    def __init__(self, count: int = 1, attrs: dict[str, str] | None = None) -> None:
+        self._count = count
+        self._attrs = attrs or {}
+
+    @property
+    def first(self) -> FakeElement:
+        return self
+
+    def count(self) -> int:
+        return self._count
+
+    def get_attribute(self, name: str) -> str | None:
+        return self._attrs.get(name)
+
+
+class FakeChallengePage:
+    def __init__(self, has_challenge_after_solve: bool = False) -> None:
+        self.url = "https://example.test/form"
+        self.has_challenge_after_solve = has_challenge_after_solve
+        self.evaluations: list[Any] = []
+        self.challenge_checks = 0
+
+    def locator(self, selector: str) -> FakeElement:
+        if "recaptcha" in selector:
+            return FakeElement(1, {"data-sitekey": "sitekey_12345"})
+        return FakeElement(0)
+
+    def evaluate(self, script: str, arg: Any) -> None:
+        self.evaluations.append({"script": script, "arg": arg})
+
+    def wait_for_timeout(self, ms: int) -> None:
+        pass
+
+
+def test_reaction_browser_solves_captcha_when_enabled() -> None:
+    settings = Settings(_env_file=None)
+    fake_solver = FakeCaptchaSolver(token="mocked_captcha_token")
+    browser = ReactionBrowser(settings, captcha_solver=fake_solver)  # type: ignore[arg-type]
+
+    page = FakeChallengePage(has_challenge_after_solve=False)
+    browser._has_challenge = lambda _p: False  # type: ignore[assignment]
+
+    solved = browser.solve_page_challenge(page)  # type: ignore[arg-type]
+
+    assert solved is True
+    assert len(fake_solver.solved_calls) == 1
+    assert fake_solver.solved_calls[0]["sitekey"] == "sitekey_12345"
+    assert len(page.evaluations) == 1
+    assert page.evaluations[0]["arg"]["token"] == "mocked_captcha_token"
+
+
+def test_reaction_browser_fails_when_captcha_solver_disabled() -> None:
+    settings = Settings(_env_file=None)
+    fake_solver = FakeCaptchaSolver(token=None)
+    browser = ReactionBrowser(settings, captcha_solver=fake_solver)  # type: ignore[arg-type]
+
+    page = FakeChallengePage()
+    solved = browser.solve_page_challenge(page)  # type: ignore[arg-type]
+
+    assert solved is False
+    assert len(fake_solver.solved_calls) == 0
+
