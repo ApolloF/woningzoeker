@@ -525,16 +525,18 @@ class ReactionBrowser:
             with contextlib.suppress(Exception):
                 page.evaluate(
                     """(targetId) => {
+                        if (window.jQuery) {
+                            try { window.jQuery('#' + targetId).modal('show'); } catch(e) {}
+                        }
                         const modal = document.getElementById(targetId);
-                        if (modal && (window.getComputedStyle(modal).display === 'none' || !modal.classList.contains('show'))) {
-                            const visBtn = Array.from(document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`))
-                                .find(el => el.offsetParent !== null || el.offsetWidth > 0 || el.offsetHeight > 0);
-                            if (visBtn) {
-                                visBtn.click();
-                            } else {
-                                modal.classList.add('show', 'in');
-                                modal.style.display = 'block';
-                            }
+                        if (modal) {
+                            modal.classList.add('show', 'in');
+                            modal.style.display = 'block';
+                        }
+                        const visBtn = Array.from(document.querySelectorAll(`a[href*="${targetId}"], button[data-target*="${targetId}"], [data-bs-target*="${targetId}"]`))
+                            .find(el => el.offsetWidth > 0 && el.offsetHeight > 0);
+                        if (visBtn) {
+                            visBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                         }
                     }""",
                     clean_part,
