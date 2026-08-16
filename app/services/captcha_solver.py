@@ -139,7 +139,12 @@ class CaptchaSolver:
         try:
             with httpx.Client(timeout=30.0) as client:
                 res = client.post(create_url, json={"clientKey": api_key, "task": task})
-                res.raise_for_status()
+                if res.status_code != 200:
+                    logger.warning(
+                        "CapSolver createTask failed",
+                        extra={"context": {"status": res.status_code, "body": res.text[:200]}},
+                    )
+                    return None
                 data = res.json()
                 if data.get("errorId", 0) != 0:
                     logger.warning(
@@ -190,7 +195,12 @@ class CaptchaSolver:
         try:
             with httpx.Client(timeout=30.0) as client:
                 res = client.post(create_url, json={"clientKey": api_key, "task": task})
-                res.raise_for_status()
+                if res.status_code != 200:
+                    logger.warning(
+                        "Anti-Captcha createTask failed",
+                        extra={"context": {"status": res.status_code, "body": res.text[:200]}},
+                    )
+                    return None
                 data = res.json()
                 if data.get("errorId", 0) != 0:
                     logger.warning(
