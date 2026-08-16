@@ -316,6 +316,10 @@ class ReactionBrowser:
                     )
 
                 form = self._find_form(page, spec)
+                if form is None and spec.action_href_parts:
+                    self._follow_action(page, spec)
+                    form = self._find_form(page, spec)
+
                 if form is None and spec.account_required and credential and (credential.username and credential.password):
                     login_result = self._ensure_login(
                         page, context, spec, listing_url, credential, source_name, challenge_meta
@@ -352,7 +356,7 @@ class ReactionBrowser:
                 if blocker:
                     return self._with_storage(context, self._review(*blocker))
 
-                fill_result = self._fill_form(form, contact, message)
+                fill_result = self._fill_form(form, contact, message, accept_legal_confirmations)
                 if isinstance(fill_result, BrowserReactionResult):
                     return self._with_storage(context, fill_result)
                 field_names = fill_result
@@ -839,7 +843,11 @@ class ReactionBrowser:
         return None
 
     def _fill_form(
-        self, form: Locator, contact: PrivateContactData, message: str
+        self,
+        form: Locator,
+        contact: PrivateContactData,
+        message: str,
+        accept_legal_confirmations: bool = False,
     ) -> list[str] | BrowserReactionResult:
         values = {
             "first": contact.first_name,
@@ -871,6 +879,28 @@ class ReactionBrowser:
                             sel.select_option(value=opt.get_attribute("value"))
                             filled.append(sel_desc[:120])
                         break
+
+        # Handle legal checkboxes when accepted
+        if accept_legal_confirmations:
+            checkboxes = form.locator("input[type='checkbox']")
+            for index in range(checkboxes.count()):
+                cb = checkboxes.nth(index)
+                if not cb.is_visible() or cb.is_disabled() or cb.is_checked():
+                    continue
+                cb_desc = " ".join(
+                    filter(
+                        None,
+                        (
+                            cb.get_attribute("name"),
+                            cb.get_attribute("id"),
+                            cb.get_attribute("aria-label"),
+                        ),
+                    )
+                ).lower()
+                if self._legal_checkbox.search(cb_desc):
+                    with contextlib.suppress(Exception):
+                        cb.check(force=True)
+                        filled.append(cb_desc[:120])
 
         filled_keys: set[str] = set()
         controls = form.locator("input, textarea")
