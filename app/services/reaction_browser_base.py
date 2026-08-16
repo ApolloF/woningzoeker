@@ -62,7 +62,7 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     ),
     "woldring": ReactionSpec(
         account_required=True,
-        login_url="https://www.woldring.nl/mijn-woldring/inloggen",
+        login_url="https://woldringverhuur.nl/mijn-woldring/inloggen",
         form_selectors=("form:has(textarea):has(button[type='submit'])",),
     ),
     "gruno_vastgoed": ReactionSpec(
@@ -76,6 +76,12 @@ REACTION_SPECS: dict[str, ReactionSpec] = {
     ),
     "rotsvast_groningen": ReactionSpec(
         action_href_parts=("#modal-form-appointment-object",),
+        form_selectors=(
+            "form#gform_7",
+            "form#gform_17",
+            "form[id*='gform']",
+            "form:has(textarea):visible",
+        ),
     ),
     "pandomo": ReactionSpec(
         action_href_parts=("#inschrijven-huur-modal",),
@@ -320,11 +326,13 @@ class ReactionBrowser:
                             "woning is verhuurd",
                             "deze woning is verhuurd",
                             "verhuurd onder voorbehoud",
+                            "open huis heeft inmiddels plaatsgevonden",
+                            "volgeboekt",
                         )
                     ):
                         return self._with_storage(
                             context,
-                            self._review("LISTING_ARCHIVED", "Deze woning is inmiddels verhuurd of gearchiveerd op de bronsite."),
+                            self._review("LISTING_ARCHIVED", "Deze woning is inmiddels verhuurd, volgeboekt of gearchiveerd."),
                         )
                     return self._with_storage(
                         context,
@@ -594,10 +602,14 @@ class ReactionBrowser:
         try:
             # 1. reCAPTCHA v2 / v3
             recaptcha_frame = page.locator("iframe[src*='recaptcha']").first
-            recaptcha_el = page.locator(".g-recaptcha, [data-sitekey]").first
+            recaptcha_el = page.locator(".g-recaptcha, [data-sitekey]:not(.cf-turnstile):not(.h-captcha)").first
             sitekey = None
+            is_v3 = False
             if recaptcha_el.count() and recaptcha_el.get_attribute("data-sitekey"):
                 sitekey = recaptcha_el.get_attribute("data-sitekey")
+                cls_name = (recaptcha_el.get_attribute("class") or "").lower()
+                if "v3" in cls_name or "recaptchav3" in cls_name:
+                    is_v3 = True
             elif recaptcha_frame.count():
                 src = recaptcha_frame.get_attribute("src") or ""
                 match = re.search(r"[?&](?:k|sitekey)=([^&]+)", src)
@@ -605,8 +617,11 @@ class ReactionBrowser:
                     sitekey = match.group(1)
 
             if sitekey:
-                s_data = recaptcha_el.get_attribute("data-s") if recaptcha_el.count() else None
-                token = self.captcha_solver.solve_recaptcha_v2(page.url, sitekey, s_data=s_data)
+                if is_v3:
+                    token = self.captcha_solver.solve_recaptcha_v3(page.url, sitekey)
+                else:
+                    s_data = recaptcha_el.get_attribute("data-s") if recaptcha_el.count() else None
+                    token = self.captcha_solver.solve_recaptcha_v2(page.url, sitekey, s_data=s_data)
                 if token:
                     self._inject_captcha_token(page, token, field_names=["g-recaptcha-response"])
                     with contextlib.suppress(Exception):
@@ -639,7 +654,7 @@ class ReactionBrowser:
             turnstile_frame = page.locator(
                 "iframe[src*='turnstile'], iframe[src*='challenges.cloudflare.com']"
             ).first
-            turnstile_el = page.locator(".cf-turnstile[data-sitekey], [data-sitekey]").first
+            turnstile_el = page.locator(".cf-turnstile[data-sitekey], [class*='turnstile'][data-sitekey]").first
             t_sitekey = None
             if turnstile_el.count() and turnstile_el.get_attribute("data-sitekey"):
                 t_sitekey = turnstile_el.get_attribute("data-sitekey")
@@ -818,9 +833,27 @@ class ReactionBrowser:
             "address": contact.address,
             "number": contact.house_number,
             "city": contact.city,
+            "zip": getattr(contact, "postcode", "") or "9711HB",
             "message": message,
         }
         filled: list[str] = []
+
+        # Handle selects (e.g. aanhef / salutation / gender)
+        selects = form.locator("select")
+        for index in range(selects.count()):
+            sel = selects.nth(index)
+            if not sel.is_visible() or sel.is_disabled():
+                continue
+            sel_desc = " ".join(filter(None, (sel.get_attribute("name"), sel.get_attribute("id")))).lower()
+            if re.search(r"aanhef|salutation|gender|geslacht|title", sel_desc):
+                for opt in sel.locator("option").all():
+                    txt = opt.inner_text()
+                    if re.search(r"heer|dhr|man|mr", txt, re.I):
+                        with contextlib.suppress(Exception):
+                            sel.select_option(value=opt.get_attribute("value"))
+                            filled.append(sel_desc[:120])
+                        break
+
         controls = form.locator("input, textarea")
         for index in range(controls.count()):
             control = controls.nth(index)
@@ -899,6 +932,7 @@ class ReactionBrowser:
             ("initial", r"initial|voorletter"),
             ("mobile", r"mobile|mobiel"),
             ("phone", r"phone|telefoon|tel\b"),
+            ("zip", r"postcode|postal|zip"),
             ("number", r"house.?number|huisnummer|address_number"),
             ("address", r"street|straat|adres|address"),
             ("city", r"city|plaats|woonplaats"),

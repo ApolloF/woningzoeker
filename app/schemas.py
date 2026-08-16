@@ -123,6 +123,7 @@ class PrivateContactData(BaseModel):
     address: str = Field(min_length=1, max_length=200)
     house_number: str = Field(min_length=1, max_length=30)
     city: str = Field(min_length=1, max_length=100)
+    postcode: str = Field(default="9711HB", max_length=20)
 
 
 class SourceCredentialData(BaseModel):
