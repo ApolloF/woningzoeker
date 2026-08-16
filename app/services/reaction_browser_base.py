@@ -120,6 +120,7 @@ class ReactionBrowser:
     )
     _sensitive_checkbox = re.compile(
         r"marketing|nieuwsbrief|newsletter|commercial|reclame|betaling|payment|kosten|cost|"
+        r"trial|probeer|huurprofiel|cent|abonnement|subscription|"
         r"identiteit|identity|document|upload|paspoort|passport|id.?kaart|loonstrook|payslip",
         re.I,
     )
@@ -257,14 +258,23 @@ class ReactionBrowser:
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
             try:
-                login_result = self._ensure_login(
-                    page, context, spec, listing_url, credential, source_name, challenge_meta
-                )
-                if login_result is not None:
-                    return login_result
+                if spec.account_required and not (credential and credential.storage_state):
+                    login_result = self._ensure_login(
+                        page, context, spec, listing_url, credential, source_name, challenge_meta
+                    )
+                    if login_result is not None:
+                        return login_result
 
                 page.goto(listing_url, wait_until="domcontentloaded")
                 self._dismiss_cookie_banner(page)
+                if spec.account_required and page.locator("input[type='password']:visible").count():
+                    login_result = self._ensure_login(
+                        page, context, spec, listing_url, credential, source_name, challenge_meta
+                    )
+                    if login_result is not None:
+                        return login_result
+                    page.goto(listing_url, wait_until="domcontentloaded")
+                    self._dismiss_cookie_banner(page)
                 if spec.review_only_code:
                     return self._with_storage(
                         context,
@@ -784,8 +794,9 @@ class ReactionBrowser:
             is_checked = checkbox.is_checked()
 
             if checkbox_action == "accept":
-                if checkbox.is_visible() and not checkbox.is_disabled() and not is_checked:
-                    checkbox.check()
+                if not checkbox.is_disabled() and not is_checked:
+                    with contextlib.suppress(Exception):
+                        checkbox.check(force=True)
                 continue
             if checkbox_action == "review":
                 if is_required or is_checked:
