@@ -867,6 +867,7 @@ class ReactionBrowser:
                             filled.append(sel_desc[:120])
                         break
 
+        filled_keys: set[str] = set()
         controls = form.locator("input, textarea")
         for index in range(controls.count()):
             control = controls.nth(index)
@@ -931,7 +932,8 @@ class ReactionBrowser:
                     val = val[:limit]
             control.fill(val)
             filled.append(descriptor[:120] or key)
-        if "message" not in {self._field_key(name, "text", "") for name in filled}:  # noqa: SIM102
+            filled_keys.add(key)
+        if "message" not in filled_keys:
             if form.locator("textarea:visible").count() > 0:
                 return self._review("MESSAGE_FIELD_MISSING", "Geen berichtveld gevonden.")
         return sorted(set(filled))
