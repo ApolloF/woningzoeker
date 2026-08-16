@@ -904,7 +904,7 @@ class ReactionBrowser:
             ("number", r"house.?number|huisnummer|address_number"),
             ("address", r"street|straat|adres|address"),
             ("city", r"city|plaats|woonplaats"),
-            ("message", r"message|bericht|remark|toelichting|motivatie|comment"),
+            ("message", r"message|bericht|remark|toelichting|motivatie|motivation|reactie|comment"),
         )
         if control_type == "email":
             return "email"
