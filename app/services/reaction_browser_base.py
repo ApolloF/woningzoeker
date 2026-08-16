@@ -786,15 +786,14 @@ class ReactionBrowser:
                 if form.is_visible():
                     return form
                 with contextlib.suppress(Exception):
-                    form.evaluate(
-                        """el => {
-                            const m = el.closest('.modal, [id*="modal"], [class*="modal"]');
-                            if (m) {
+                    page.evaluate(
+                        """() => {
+                            document.querySelectorAll('.modal, [id*="modal"], [class*="modal"], .form-popup').forEach(m => {
                                 m.classList.add('show', 'in');
                                 m.style.setProperty('display', 'block', 'important');
                                 m.style.setProperty('opacity', '1', 'important');
                                 m.style.setProperty('visibility', 'visible', 'important');
-                            }
+                            });
                         }"""
                     )
                     page.wait_for_timeout(500)
