@@ -3,9 +3,12 @@ from __future__ import annotations
 import re
 from urllib.parse import urljoin, urlparse
 
+import httpx
 from bs4 import BeautifulSoup, Tag
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.adapters.base import (
+    AdapterError,
     SourceAdapter,
     extract_published_at,
     parse_decimal,
@@ -18,7 +21,37 @@ from app.schemas import NormalizedListing
 class KamernetAdapter(SourceAdapter):
     source_name = "kamernet"
     display_name = "Kamernet"
-    search_url = "https://kamernet.nl/huren/huurwoningen-groningen"
+    search_url = "https://kamernet.nl/huren/kamers-groningen"
+
+    @retry(
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+        wait=wait_exponential(multiplier=1, min=2, max=20),
+        stop=stop_after_attempt(3),
+        reraise=True,
+    )
+    def fetch_html(self) -> str:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+        with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True, headers=headers) as client:
+            response = client.get(self.search_url)
+            response.raise_for_status()
+            if "text/html" not in response.headers.get("content-type", ""):
+                raise AdapterError(f"unexpected content type for {self.source_name}")
+            return response.text
 
     def parse(self, html: str) -> list[NormalizedListing]:
         soup = BeautifulSoup(html, "html.parser")
