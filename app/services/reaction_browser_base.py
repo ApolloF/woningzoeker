@@ -316,6 +316,16 @@ class ReactionBrowser:
                     )
 
                 form = self._find_form(page, spec)
+                if form is None and spec.account_required and credential and (credential.username and credential.password):
+                    login_result = self._ensure_login(
+                        page, context, spec, listing_url, credential, source_name, challenge_meta
+                    )
+                    if login_result is None:
+                        page.goto(listing_url, wait_until="domcontentloaded")
+                        self._dismiss_cookie_banner(page)
+                        self._follow_action(page, spec)
+                        form = self._find_form(page, spec)
+
                 if form is None:
                     body_text = page.locator("body").inner_text().lower()
                     if any(
@@ -504,7 +514,7 @@ class ReactionBrowser:
             href = link.get_attribute("href") or ""
             if href.startswith("#") or not href:
                 with contextlib.suppress(Exception):
-                    link.click()
+                    link.click(force=True)
                     page.wait_for_timeout(1000)
             else:
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
@@ -516,7 +526,7 @@ class ReactionBrowser:
         ).first
         if action_btn.count() and action_btn.is_visible():
             with contextlib.suppress(Exception):
-                action_btn.click()
+                action_btn.click(force=True)
                 page.wait_for_timeout(1000)
 
     @staticmethod
